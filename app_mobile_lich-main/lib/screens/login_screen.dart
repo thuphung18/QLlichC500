@@ -244,7 +244,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         textInputAction: TextInputAction.next,
                         decoration: InputDecoration(
                           labelText: 'Tên đăng nhập',
-                          hintText: 'Ví dụ: thanh',
+                          hintText: '',
                           prefixIcon: const Icon(Icons.person),
                           filled: true,
                           fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.white.withAlpha(12) : const Color(0xFFF8FAFC),
@@ -264,7 +264,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         },
                         decoration: InputDecoration(
                           labelText: 'Mật khẩu',
-                          hintText: 'Ví dụ: 123456',
+                          hintText: '',
                           prefixIcon: const Icon(Icons.lock),
                           suffixIcon: IconButton(
                             onPressed: () {

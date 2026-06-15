@@ -221,7 +221,7 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
                       decoration: InputDecoration(
                         counterText: '',
                         labelText: 'Mã xác thực',
-                        hintText: '123456',
+                        hintText: '••••••',
                         filled: true,
                         fillColor: const Color(0xFFF8FAFC),
                         border: OutlineInputBorder(

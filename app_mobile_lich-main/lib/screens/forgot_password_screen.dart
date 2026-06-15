@@ -99,7 +99,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               ),
             ),
           ),
-          
+
           SafeArea(
             child: Column(
               children: [
@@ -120,9 +120,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     ],
                   ),
                 ),
-                
+
                 const SizedBox(height: 10),
-                
+
                 Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
@@ -135,9 +135,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     color: Colors.white,
                   ),
                 ),
-                
+
                 const SizedBox(height: 40),
-                
+
                 Expanded(
                   child: Container(
                     width: double.infinity,
@@ -178,7 +178,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             ),
                           ),
                           const SizedBox(height: 36),
-                          
+
                           Container(
                             decoration: BoxDecoration(
                               color: isDark ? const Color(0xFF1E293B) : Colors.white,
@@ -204,7 +204,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                               decoration: InputDecoration(
                                 labelText: 'Email hoặc Số điện thoại',
                                 labelStyle: TextStyle(color: primaryColor.withAlpha(180)),
-                                hintText: 'Ví dụ: thanh@academy.edu.vn',
+                                hintText: '',
                                 hintStyle: TextStyle(color: Colors.grey.withAlpha(130)),
                                 prefixIcon: Icon(Icons.alternate_email_rounded, color: primaryColor),
                                 filled: true,
@@ -220,14 +220,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                               ),
                             ),
                           ),
-                          
+
                           if (_errorMessage != null) ...[
                             const SizedBox(height: 20),
                             _MessageBox(message: _errorMessage!, isSuccess: false),
                           ],
-                          
+
                           const SizedBox(height: 36),
-                          
+
                           SizedBox(
                             width: double.infinity,
                             height: 60,
@@ -244,46 +244,25 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                               ),
                               child: _isLoading
                                   ? const SizedBox(
-                                      width: 26,
-                                      height: 26,
-                                      child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white),
-                                    )
+                                width: 26,
+                                height: 26,
+                                child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white),
+                              )
                                   : const Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Text(
-                                          'Gửi Mã Xác Thực',
-                                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                                        ),
-                                        SizedBox(width: 10),
-                                        Icon(Icons.arrow_forward_rounded, size: 24),
-                                      ],
-                                    ),
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    'Gửi Mã Xác Thực',
+                                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  ),
+                                  SizedBox(width: 10),
+                                  Icon(Icons.arrow_forward_rounded, size: 24),
+                                ],
+                              ),
                             ),
                           ),
-                          
+
                           const SizedBox(height: 30),
-                          
-                          Center(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                              decoration: BoxDecoration(
-                                color: primaryColor.withAlpha(25),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: primaryColor.withAlpha(50)),
-                              ),
-                              child: Text(
-                                'Demo: thanh@academy.edu.vn\nhoặc 0123 456 789',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: primaryColor,
-                                  fontSize: 14,
-                                  height: 1.5,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -310,22 +289,22 @@ class _MessageBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
-    final backgroundColor = isSuccess 
-      ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFF0FDF4)) 
-      : (isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFEF2F2));
 
-    final borderColor = isSuccess 
-      ? (isDark ? const Color(0xFF059669) : const Color(0xFFBBF7D0)) 
-      : (isDark ? const Color(0xFFDC2626) : const Color(0xFFFECACA));
+    final backgroundColor = isSuccess
+        ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFF0FDF4))
+        : (isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFEF2F2));
 
-    final textColor = isSuccess 
-      ? (isDark ? const Color(0xFF34D399) : const Color(0xFF166534)) 
-      : (isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C));
+    final borderColor = isSuccess
+        ? (isDark ? const Color(0xFF059669) : const Color(0xFFBBF7D0))
+        : (isDark ? const Color(0xFFDC2626) : const Color(0xFFFECACA));
 
-    final iconColor = isSuccess 
-      ? (isDark ? const Color(0xFF10B981) : const Color(0xFF16A34A)) 
-      : (isDark ? const Color(0xFFEF4444) : const Color(0xFFDC2626));
+    final textColor = isSuccess
+        ? (isDark ? const Color(0xFF34D399) : const Color(0xFF166534))
+        : (isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C));
+
+    final iconColor = isSuccess
+        ? (isDark ? const Color(0xFF10B981) : const Color(0xFF16A34A))
+        : (isDark ? const Color(0xFFEF4444) : const Color(0xFFDC2626));
 
     final icon = isSuccess ? Icons.check_circle_rounded : Icons.error_rounded;
 
