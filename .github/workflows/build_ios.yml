@@ -1,0 +1,45 @@
+name: Build iOS (No Code Sign)
+
+# Cho phép bạn bấm nút chạy tiến trình này bằng tay trên GitHub
+on:
+  workflow_dispatch: 
+
+jobs:
+  build-ios:
+    name: Build iOS App
+    # Yêu cầu GitHub cấp một máy ảo chạy hệ điều hành macOS
+    runs-on: macos-latest
+
+    steps:
+      - name: Lấy mã nguồn về máy ảo
+        uses: actions/checkout@v3
+
+      - name: Cài đặt Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Tải các thư viện (Dependencies)
+        # Chỉ định máy ảo chui vào đúng thư mục chứa code Flutter
+        working-directory: ./app_mobile_lich-main
+        run: flutter pub get
+
+      - name: Biên dịch ra file .app iOS
+        working-directory: ./app_mobile_lich-main
+        # Lệnh build không cần tài khoản Developer
+        run: flutter build ios --release --no-codesign
+
+      - name: Đóng gói thành file .ipa chuẩn
+        working-directory: ./app_mobile_lich-main/build/ios/iphoneos
+        # Tự động tạo thư mục Payload và nén lại thành .ipa giúp bạn
+        run: |
+          mkdir Payload
+          cp -R Runner.app Payload
+          zip -r Payload.zip Payload
+          mv Payload.zip Quản_Lý_Lịch.ipa
+
+      - name: Xuất file cài đặt ra ngoài
+        uses: actions/upload-artifact@v4
+        with:
+          name: iOS-App-IPA
+          path: app_mobile_lich-main/build/ios/iphoneos/Quản_Lý_Lịch.ipa
