@@ -1,13 +1,11 @@
 name: Build iOS (No Code Sign)
 
-# Cho phép bạn bấm nút chạy tiến trình này bằng tay trên GitHub
 on:
   workflow_dispatch: 
 
 jobs:
   build-ios:
     name: Build iOS App
-    # Yêu cầu GitHub cấp một máy ảo chạy hệ điều hành macOS
     runs-on: macos-latest
 
     steps:
@@ -20,18 +18,32 @@ jobs:
           channel: 'stable'
 
       - name: Tải các thư viện (Dependencies)
-        # Chỉ định máy ảo chui vào đúng thư mục chứa code Flutter
         working-directory: ./app_mobile_lich-main
         run: flutter pub get
 
+      - name: "VŨ KHÍ TỐI THƯỢNG: Ép buộc hệ thống nhận iOS 15.0"
+        working-directory: ./app_mobile_lich-main/ios
+        # Đoạn script này sẽ tìm kiếm mọi ngóc ngách và đổi thành 15.0
+        run: |
+          echo "Bắt đầu ép Xcode project lên 15.0..."
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/g' Runner.xcodeproj/project.pbxproj
+          
+          echo "Bắt đầu ép Podfile lên 15.0..."
+          if [ -f "Podfile" ]; then
+            sed -i '' "s/platform :ios, '[0-9.]*'/platform :ios, '15.0'/g" Podfile
+          fi
+          
+          echo "Bắt đầu ép AppFrameworkInfo.plist lên 15.0..."
+          if [ -f "Flutter/AppFrameworkInfo.plist" ]; then
+            sed -i '' 's/<string>[0-9.]*<\/string>/<string>15.0<\/string>/g' Flutter/AppFrameworkInfo.plist
+          fi
+
       - name: Biên dịch ra file .app iOS
         working-directory: ./app_mobile_lich-main
-        # Lệnh build không cần tài khoản Developer
         run: flutter build ios --release --no-codesign
 
       - name: Đóng gói thành file .ipa chuẩn
         working-directory: ./app_mobile_lich-main/build/ios/iphoneos
-        # Tự động tạo thư mục Payload và nén lại thành .ipa giúp bạn
         run: |
           mkdir Payload
           cp -R Runner.app Payload
