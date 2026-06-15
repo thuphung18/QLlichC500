@@ -1,0 +1,123 @@
+v_schedule_api:
+
+/* =========================
+   6. VIEW DỮ LIỆU GẦN GIỐNG API TRẢ VỀ CHO FLUTTER
+   participants và participantUserIds đang nối bằng dấu |.
+   Backend Node.js sẽ split ra List<String> trước khi trả JSON.
+   ========================= */
+CREATE   VIEW dbo.v_schedule_api
+AS
+SELECT
+    s.id,
+    s.title,
+    s.teacher,
+    s.room,
+    s.date_label AS dateLabel,
+    CONVERT(VARCHAR(5), s.start_time, 108) AS startTime,
+    CONVERT(VARCHAR(5), s.end_time, 108) AS endTime,
+    s.session,
+    ISNULL(s.note, N'') AS note,
+    s.unit,
+    s.department_id AS departmentId,
+    d.name AS departmentName,
+    s.category,
+    s.day_index AS dayIndex,
+    s.schedule_date AS scheduleDate,
+    ISNULL(pa.participants, N'') AS participantsText,
+    ISNULL(pa.participantUserIds, N'') AS participantUserIdsText,
+    s.status
+FROM dbo.schedules s
+INNER JOIN dbo.departments d ON d.id = s.department_id
+OUTER APPLY (
+    SELECT
+        STRING_AGG(CAST(p.participant_name AS NVARCHAR(MAX)), N'|')
+            WITHIN GROUP (ORDER BY p.id) AS participants,
+        STRING_AGG(CAST(p.user_id AS NVARCHAR(MAX)), N'|')
+            WITHIN GROUP (ORDER BY p.id) AS participantUserIds
+    FROM dbo.schedule_participants p
+    WHERE p.schedule_id = s.id
+) pa;
+
+
+sp_GetSchedulesForUser:
+
+-- 2. Cáº­p nháº­t sp_GetSchedulesForUser
+CREATE   PROCEDURE dbo.sp_GetSchedulesForUser
+    @UserId NVARCHAR(50),
+    @DayIndex INT = NULL,
+    @Mode NVARCHAR(50) = N'all',    -- 'all', 'my', 'department'
+    @Keyword NVARCHAR(255) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @UserDepartmentId NVARCHAR(50);
+    SELECT @UserDepartmentId = department_id
+    FROM dbo.users
+    WHERE id = @UserId AND is_active = 1;
+
+    SELECT
+        v.id,
+        v.title,
+        v.teacher,
+        v.room,
+        v.dateLabel,
+        v.startTime,
+        v.endTime,
+        v.session,
+        v.note,
+        v.unit,
+        v.departmentId,
+        v.departmentName,
+        v.category,
+        v.dayIndex,
+        v.participantsText,
+        v.participantUserIdsText,
+        CAST(CASE
+            WHEN EXISTS (
+                SELECT 1
+                FROM dbo.schedule_participants p
+                WHERE p.schedule_id = v.id
+                  AND p.user_id = @UserId
+            ) THEN 1 ELSE 0
+        END AS BIT) AS isMine,
+        CAST(CASE
+            WHEN v.departmentId = @UserDepartmentId THEN 1 ELSE 0
+        END AS BIT) AS isDepartment
+    FROM dbo.v_schedule_api v
+    WHERE v.status = N'active'
+      AND NOT EXISTS (
+          SELECT 1 FROM dbo.user_hidden_schedules uh 
+          WHERE uh.schedule_id = v.id AND uh.user_id = @UserId
+      )
+      AND (
+            v.departmentId = @UserDepartmentId
+            OR EXISTS (
+                SELECT 1
+                FROM dbo.schedule_participants p
+                WHERE p.schedule_id = v.id
+                  AND p.user_id = @UserId
+            )
+          )
+      AND (@DayIndex IS NULL OR v.dayIndex = @DayIndex)
+      AND (
+            @Keyword IS NULL OR LTRIM(RTRIM(@Keyword)) = N''
+            OR LOWER(v.title) LIKE N'%' + LOWER(@Keyword) + N'%'
+            OR LOWER(v.teacher) LIKE N'%' + LOWER(@Keyword) + N'%'
+            OR LOWER(v.room) LIKE N'%' + LOWER(@Keyword) + N'%'
+            OR LOWER(v.note) LIKE N'%' + LOWER(@Keyword) + N'%'
+            OR LOWER(v.unit) LIKE N'%' + LOWER(@Keyword) + N'%'
+            OR LOWER(v.departmentName) LIKE N'%' + LOWER(@Keyword) + N'%'
+            OR LOWER(v.category) LIKE N'%' + LOWER(@Keyword) + N'%'
+            OR LOWER(v.participantsText) LIKE N'%' + LOWER(@Keyword) + N'%'
+          )
+      AND (
+            @Mode = N'all'
+            OR (@Mode = N'my' AND EXISTS (
+                SELECT 1 FROM dbo.schedule_participants p
+                WHERE p.schedule_id = v.id AND p.user_id = @UserId
+            ))
+            OR (@Mode = N'department' AND v.departmentId = @UserDepartmentId)
+          )
+    ORDER BY v.dayIndex, v.startTime;
+END

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "734831076442",
+    "project_id": "qllichc500",
+    "storage_bucket": "qllichc500.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:734831076442:android:b1b0819c7d4bdad9c4a463",
+        "android_client_info": {
+          "package_name": "com.example.date"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDS53YaeZUmaInqsiUc8m0bD47prKiR2-Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

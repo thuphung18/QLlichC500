@@ -1,0 +1,19 @@
+Schedules returned for DayIndex 2:
+ID: 82fdb2d5-405a-430b-bca8-56c6a3219585, Title: thi kết thúc học phần môn phân tích thiết kế hệ thống thông tin , DateLabel: Thứ 2, 15/06
+
+All Schedules in DB:
+('1', 'Đi dự khai mạc triển khai đợt 1 xây dựng ngân hàng câu hỏi thi', 'Thứ 2, 08/6', datetime.date(2026, 6, 8), 'active', 2)
+('10', 'Tổng kết công tác tuần của khoa', 'Thứ 6, 12/6', datetime.date(2026, 6, 12), 'active', 6)
+('11', 'Bảo trì hệ thống máy chủ lịch công tác', 'Thứ 2, 08/6', datetime.date(2026, 6, 8), 'deleted', 2)
+('12', 'Học môn Cơ sở dữ liệu', 'Thứ 6, 12/6', datetime.date(2026, 6, 12), 'active', 6)
+('13', 'Họp bộ môn Kinh tế học', 'Thứ 6, 12/6', datetime.date(2026, 6, 12), 'active', 6)
+('2', 'Họp Hội đồng thi đua khen thưởng khối học viên xét thi', 'Thứ 2, 08/6', datetime.date(2026, 6, 8), 'active', 2)
+('3', 'Giảng dạy môn Lập trình Mobile', 'Thứ 3, 09/6', datetime.date(2026, 6, 9), 'active', 3)
+('4', 'Sinh hoạt chuyên môn khoa Công nghệ thông tin', 'Thứ 3, 09/6', datetime.date(2026, 6, 9), 'active', 3)
+('5', 'Chấm bài kiểm tra giữa kỳ môn Cơ sở dữ liệu', 'Thứ 4, 10/6', datetime.date(2026, 6, 10), 'active', 4)
+('6', 'Họp xây dựng kế hoạch tuyển sinh ngành Công nghệ thông tin', 'Thứ 4, 10/6', datetime.date(2026, 6, 10), 'active', 4)
+('7', 'Giảng dạy môn Phân tích thiết kế hệ thống thông tin', 'Thứ 5, 11/6', datetime.date(2026, 6, 11), 'active', 5)
+('7025410e-a285-4f71-932c-82133345c1cd', 'Làm bài thi kết thúc học phần môn Phân tích thiết kế', 'Thứ 2, 15/06', datetime.date(2026, 6, 15), 'deleted', 2)
+('8', 'Tập huấn sử dụng hệ thống quản lý lịch công tác', 'Thứ 5, 11/6', datetime.date(2026, 6, 11), 'active', 5)
+('82fdb2d5-405a-430b-bca8-56c6a3219585', 'thi kết thúc học phần môn phân tích thiết kế hệ thống thông tin ', 'Thứ 2, 15/06', datetime.date(2026, 6, 15), 'active', 2)
+('9', 'Tư vấn đồ án tốt nghiệp cho sinh viên', 'Thứ 6, 12/6', datetime.date(2026, 6, 12), 'active', 6)

@@ -1,0 +1,149 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+import '../models/user_profile.dart';
+import '../models/schedule_item.dart';
+import '../models/create_schedule_request.dart';
+import '../models/form_data_response.dart';
+import '../repositories/schedule_repository.dart';
+import 'api_config.dart';
+
+/// Lớp [ApiScheduleRepository] đóng vai trò lấy/gửi dữ liệu lịch trình từ/đến Backend API.
+/// Kế thừa từ interface [ScheduleRepository].
+class ApiScheduleRepository implements ScheduleRepository {
+  final String _baseUrl = ApiConfig.baseUrl;
+  
+  /// Người dùng hiện tại (cần thiết để gửi kèm user_id cho mỗi request API)
+  @override
+  final UserProfile currentUser;
+
+  ApiScheduleRepository({required this.currentUser});
+
+  /// Hàm phụ trợ (helper) dùng chung để lấy một danh sách lịch từ URL cụ thể.
+  Future<List<ScheduleItem>> _fetchSchedules(String url) async {
+    try {
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        // Giải mã JSON thành List dynamic
+        final List<dynamic> data = jsonDecode(response.body);
+        // Duyệt qua từng phần tử và parse thành đối tượng ScheduleItem
+        return data.map((json) => ScheduleItem.fromJson(json)).toList();
+      }
+      return [];
+    } catch (e) {
+      print('Fetch error: $e');
+      return []; // Nếu lỗi thì trả về danh sách rỗng để không bị crash UI
+    }
+  }
+
+  /// Lấy toàn bộ lịch (phù hợp với quyền của người dùng)
+  @override
+  Future<List<ScheduleItem>> getAllSchedules() async {
+    return _fetchSchedules('$_baseUrl/schedules?user_id=${currentUser.id}');
+  }
+
+  /// Lấy lịch theo một thứ cụ thể trong tuần (dayIndex: 2 -> thứ 2, ...)
+  @override
+  Future<List<ScheduleItem>> getSchedulesByDay(int dayIndex) async {
+    return _fetchSchedules('$_baseUrl/schedules/day/$dayIndex?user_id=${currentUser.id}');
+  }
+
+  /// Chỉ lấy những lịch mà chính người dùng này tham gia (Lịch cá nhân)
+  @override
+  Future<List<ScheduleItem>> getMySchedules() async {
+    return _fetchSchedules('$_baseUrl/schedules/my?user_id=${currentUser.id}');
+  }
+
+  /// Chỉ lấy lịch của khoa/phòng ban mà người dùng đang trực thuộc
+  @override
+  Future<List<ScheduleItem>> getDepartmentSchedules() async {
+    return _fetchSchedules('$_baseUrl/schedules/department?user_id=${currentUser.id}');
+  }
+
+  /// Cập nhật FCM Token (Dùng cho chức năng Firebase Cloud Messaging - Gửi thông báo đẩy)
+  Future<void> updateFcmToken(String fcmToken) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrl/auth/fcm-token'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'user_id': currentUser.id,
+          'fcm_token': fcmToken,
+        }),
+      );
+      if (response.statusCode == 200) {
+        print('FCM token updated successfully');
+      } else {
+        print('Failed to update FCM token: ${response.body}');
+      }
+    } catch (e) {
+      print('Update FCM token error: $e');
+    }
+  }
+
+  /// Tìm kiếm lịch theo từ khóa
+  @override
+  Future<List<ScheduleItem>> searchSchedules(String keyword) async {
+    // encodeComponent để đảm bảo từ khóa có dấu tiếng Việt không làm gãy URL
+    return _fetchSchedules('$_baseUrl/schedules/search?keyword=${Uri.encodeComponent(keyword)}&user_id=${currentUser.id}');
+  }
+
+  /// Lấy dữ liệu danh mục ban đầu (các khoa, danh sách người dùng)
+  /// Dùng để hiển thị trong Dropdown khi tạo mới lịch biểu
+  @override
+  Future<FormDataResponse> getFormData() async {
+    try {
+      final response = await http.get(Uri.parse('$_baseUrl/schedules/metadata/form-data'));
+      if (response.statusCode == 200) {
+        return FormDataResponse.fromJson(jsonDecode(response.body));
+      }
+      throw Exception('Failed to load form data');
+    } catch (e) {
+      print('Fetch form data error: $e');
+      rethrow;
+    }
+  }
+
+  /// Gọi API để tạo một lịch biểu mới
+  @override
+  Future<bool> createSchedule(CreateScheduleRequest request) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrl/schedules?user_id=${currentUser.id}'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(request.toJson()),
+      );
+      
+      // Thành công khi HTTP code là 200 hoặc 201 (Created)
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return true;
+      }
+      print('Create schedule failed: ${response.body}');
+      return false;
+    } catch (e) {
+      print('Create schedule error: $e');
+      return false;
+    }
+  }
+
+  /// Gọi API để xóa một lịch biểu dựa trên scheduleId
+  @override
+  Future<bool> deleteSchedule(String scheduleId) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$_baseUrl/schedules/$scheduleId?user_id=${currentUser.id}'),
+      );
+      
+      // Thành công khi HTTP code là 200 hoặc 204 (No Content)
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        return true;
+      }
+      print('Delete schedule failed: ${response.body}');
+      return false;
+    } catch (e) {
+      print('Delete schedule error: $e');
+      return false;
+    }
+  }
+}
