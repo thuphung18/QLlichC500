@@ -21,19 +21,18 @@ jobs:
         working-directory: ./app_mobile_lich-main
         run: flutter pub get
 
-      - name: "VŨ KHÍ TỐI THƯỢNG: Ép buộc hệ thống nhận iOS 15.0"
+      - name: Dọn dẹp CocoaPods & Ép hệ thống nhận iOS 15.0
         working-directory: ./app_mobile_lich-main/ios
-        # Đoạn script này sẽ tìm kiếm mọi ngóc ngách và đổi thành 15.0
         run: |
-          echo "Bắt đầu ép Xcode project lên 15.0..."
+          echo "1. Xóa bỏ Podfile (Chuyển sang dùng Swift Package Manager của Apple)..."
+          rm -f Podfile Podfile.lock
+          rm -rf Pods
+          rm -rf .symlinks
+          
+          echo "2. Ép Xcode project lên 15.0..."
           sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/g' Runner.xcodeproj/project.pbxproj
           
-          echo "Bắt đầu ép Podfile lên 15.0..."
-          if [ -f "Podfile" ]; then
-            sed -i '' "s/platform :ios, '[0-9.]*'/platform :ios, '15.0'/g" Podfile
-          fi
-          
-          echo "Bắt đầu ép AppFrameworkInfo.plist lên 15.0..."
+          echo "3. Ép AppFrameworkInfo.plist lên 15.0..."
           if [ -f "Flutter/AppFrameworkInfo.plist" ]; then
             sed -i '' 's/<string>[0-9.]*<\/string>/<string>15.0<\/string>/g' Flutter/AppFrameworkInfo.plist
           fi
