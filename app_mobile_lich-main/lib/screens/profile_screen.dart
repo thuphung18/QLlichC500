@@ -6,10 +6,12 @@ import '../widgets/app_header.dart';
 import 'create_user_screen.dart';
 import 'edit_profile_screen.dart';
 import 'change_password_screen.dart';
+import '../services/biometric_service.dart';
+import '../data/remember_login_storage.dart';
 
 // ProfileScreen là màn hình cá nhân.
 // Hiển thị thông tin user đang đăng nhập.
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   final UserProfile profile;
   final VoidCallback onLogout;
   final Function(UserProfile) onProfileUpdated;
@@ -20,6 +22,164 @@ class ProfileScreen extends StatelessWidget {
     required this.onLogout,
     required this.onProfileUpdated,
   });
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  final BiometricService _biometricService = BiometricService();
+  final RememberLoginStorage _rememberStorage = RememberLoginStorage();
+
+  bool _isDeviceSupported = false;
+  bool _isBiometricEnabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initBiometricSettings();
+  }
+
+  Future<void> _initBiometricSettings() async {
+    final supported = await _biometricService.isDeviceSupported();
+    final enabled = await _biometricService.isBiometricEnabled();
+    setState(() {
+      _isDeviceSupported = supported;
+      _isBiometricEnabled = enabled;
+    });
+  }
+
+  Future<void> _toggleBiometric(bool value) async {
+    if (value) {
+      // Bật sinh trắc học
+      final authenticated = await _biometricService.authenticate();
+      if (!authenticated) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Xác thực sinh trắc học thất bại.')),
+          );
+        }
+        return;
+      }
+
+      // Lấy mật khẩu để lưu bảo mật
+      String? password;
+      final remembered = await _rememberStorage.load();
+      if (remembered != null && remembered.username == widget.profile.username) {
+        password = remembered.password;
+      }
+
+      if (password == null && mounted) {
+        password = await _showPasswordConfirmDialog();
+      }
+
+      if (password == null || password.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Hủy kích hoạt đăng nhập sinh trắc học do thiếu mật khẩu.')),
+          );
+        }
+        return;
+      }
+
+      await _biometricService.saveCredentials(widget.profile.username, password);
+      setState(() {
+        _isBiometricEnabled = true;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã kích hoạt đăng nhập sinh trắc học thành công.')),
+        );
+      }
+    } else {
+      // Tắt sinh trắc học
+      await _biometricService.clearCredentials();
+      setState(() {
+        _isBiometricEnabled = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã hủy kích hoạt đăng nhập sinh trắc học.')),
+        );
+      }
+    }
+  }
+
+  Future<String?> _showPasswordConfirmDialog() async {
+    final controller = TextEditingController();
+    bool isPasswordObscured = true;
+
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              title: const Text(
+                'Xác nhận mật khẩu',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Vui lòng nhập mật khẩu tài khoản hiện tại để mã hóa và lưu trữ an toàn trên thiết bị này.',
+                    style: TextStyle(fontSize: 14, color: Color(0xFF64748B), height: 1.4),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: controller,
+                    obscureText: isPasswordObscured,
+                    decoration: InputDecoration(
+                      labelText: 'Mật khẩu',
+                      prefixIcon: const Icon(Icons.lock),
+                      suffixIcon: IconButton(
+                        icon: Icon(isPasswordObscured ? Icons.visibility : Icons.visibility_off),
+                        onPressed: () {
+                          setStateDialog(() {
+                            isPasswordObscured = !isPasswordObscured;
+                          });
+                        },
+                      ),
+                      filled: true,
+                      fillColor: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.white.withAlpha(12)
+                          : const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, null),
+                  child: const Text('Hủy', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, controller.text),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2563EB),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  ),
+                  child: const Text('Xác nhận', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -65,7 +225,7 @@ class ProfileScreen extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               Text(
-                profile.fullName,
+                widget.profile.fullName,
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w900,
@@ -74,7 +234,7 @@ class ProfileScreen extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                profile.role,
+                widget.profile.role,
                 style: const TextStyle(
                   fontSize: 14,
                   color: Color(0xFF64748B),
@@ -95,11 +255,11 @@ class ProfileScreen extends StatelessWidget {
                   final updatedProfile = await Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => EditProfileScreen(profile: profile),
+                      builder: (context) => EditProfileScreen(profile: widget.profile),
                     ),
                   );
                   if (updatedProfile != null && updatedProfile is UserProfile) {
-                    onProfileUpdated(updatedProfile);
+                    widget.onProfileUpdated(updatedProfile);
                   }
                 },
                 icon: const Icon(Icons.edit, size: 18, color: Colors.white),
@@ -118,7 +278,7 @@ class ProfileScreen extends StatelessWidget {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => ChangePasswordScreen(userId: profile.id),
+                      builder: (context) => ChangePasswordScreen(userId: widget.profile.id),
                     ),
                   );
                 },
@@ -139,29 +299,28 @@ class ProfileScreen extends StatelessWidget {
         _ProfileInfoCard(
           icon: Icons.badge,
           label: 'Tên đăng nhập',
-          value: profile.username,
+          value: widget.profile.username,
         ),
         _ProfileInfoCard(
           icon: Icons.business,
           label: 'Đơn vị',
-          value: profile.unit,
+          value: widget.profile.unit,
         ),
         _ProfileInfoCard(
           icon: Icons.apartment,
           label: 'Khoa / Phòng ban',
-          value: profile.departmentName,
+          value: widget.profile.departmentName,
         ),
         _ProfileInfoCard(
           icon: Icons.email,
           label: 'Email',
-          value: profile.email,
+          value: widget.profile.email,
         ),
         _ProfileInfoCard(
           icon: Icons.phone,
           label: 'Số điện thoại',
-          value: profile.phone,
+          value: widget.profile.phone,
         ),
-
 
         const SizedBox(height: 10),
 
@@ -209,9 +368,52 @@ class ProfileScreen extends StatelessWidget {
           ),
         ),
 
+        // Biometric Settings Toggle
+        if (_isDeviceSupported)
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withAlpha(22),
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: const Icon(
+                    Icons.fingerprint,
+                    color: Color(0xFF10B981),
+                  ),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Text(
+                    'Đăng nhập Vân tay / Face ID',
+                    style: TextStyle(
+                      color: Theme.of(context).textTheme.bodyLarge?.color ?? const Color(0xFF0F172A),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Switch(
+                  value: _isBiometricEnabled,
+                  onChanged: _toggleBiometric,
+                  activeColor: const Color(0xFF10B981),
+                ),
+              ],
+            ),
+          ),
+
         const SizedBox(height: 10),
 
-        if (profile.role.toLowerCase() == 'quản trị viên' || profile.role.toLowerCase() == 'admin')
+        if (widget.profile.role.toLowerCase() == 'quản trị viên' || widget.profile.role.toLowerCase() == 'admin')
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: SizedBox(
@@ -222,7 +424,7 @@ class ProfileScreen extends StatelessWidget {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => CreateUserScreen(currentUser: profile),
+                      builder: (context) => CreateUserScreen(currentUser: widget.profile),
                     ),
                   );
                 },
@@ -248,7 +450,7 @@ class ProfileScreen extends StatelessWidget {
           width: double.infinity,
           height: 54,
           child: ElevatedButton.icon(
-            onPressed: onLogout,
+            onPressed: widget.onLogout,
             icon: const Icon(Icons.logout),
             label: const Text('Đăng xuất'),
             style: ElevatedButton.styleFrom(

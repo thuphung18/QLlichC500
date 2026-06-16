@@ -130,14 +130,14 @@ class _MainShellState extends State<MainShell> {
       return;
     }
 
-    // Xóa thông tin ghi nhớ đăng nhập nếu trước Ä‘ó ngÆ°á»i dùng có tick "Ghi nhớ".
+    // Xóa thông tin ghi nhớ đăng nhập nếu trước đó người dùng có tick "Ghi nhớ".
     await RememberLoginStorage().clear();
 
     if (!mounted) {
       return;
     }
 
-    // Quay vá» màn đăng nhập và xóa toàn bộ màn trước Ä‘ó.
+    // Quay vá»  màn đăng nhập và xóa toàn bộ màn trước Ä‘ó.
     // Như vậy sau khi đăng xuất, bấm nút Back sẽ không quay lại màn chính.
     Navigator.pushAndRemoveUntil(
       context,

@@ -6,6 +6,7 @@ import '../data/api_auth_repository.dart';
 import '../data/api_schedule_repository.dart';
 import '../data/remember_login_storage.dart';
 import '../repositories/auth_repository.dart';
+import '../services/biometric_service.dart';
 import 'forgot_password_screen.dart';
 import 'main_shell.dart';
 
@@ -29,6 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // Storage dùng để lưu tài khoản/mật khẩu khi tick "Ghi nhớ".
   final RememberLoginStorage _rememberStorage = RememberLoginStorage();
+  final BiometricService _biometricService = BiometricService();
 
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -37,6 +39,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isPasswordVisible = false;
   bool _rememberMe = false;
   String? _errorMessage;
+  bool _isBiometricConfigured = false;
 
   @override
   void initState() {
@@ -44,6 +47,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
     // Khi mở app, tự kiểm tra trước đó có lưu tài khoản không.
     _loadRememberedLogin();
+    _checkBiometricConfigured();
+  }
+
+  Future<void> _checkBiometricConfigured() async {
+    final supported = await _biometricService.isDeviceSupported();
+    final enabled = await _biometricService.isBiometricEnabled();
+    if (supported && enabled) {
+      setState(() {
+        _isBiometricConfigured = true;
+      });
+    }
   }
 
   Future<void> _loadRememberedLogin() async {
@@ -60,6 +74,104 @@ class _LoginScreenState extends State<LoginScreen> {
       // Tự động đăng nhập
       _login();
     }
+  }
+
+  Future<void> _loginWithBiometrics() async {
+    setState(() {
+      _errorMessage = null;
+      _isLoading = true;
+    });
+
+    final authenticated = await _biometricService.authenticate();
+    if (!authenticated) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Xác thực sinh trắc học không thành công.';
+      });
+      return;
+    }
+
+    Map<String, String>? credentials;
+    try {
+      credentials = await _biometricService.getCredentials();
+    } on BiometricChangedException {
+      setState(() {
+        _isLoading = false;
+        _isBiometricConfigured = false;
+        _errorMessage = 'Phát hiện cơ sở dữ liệu vân tay/Face ID trên thiết bị đã thay đổi. Vì lý do bảo mật, vui lòng đăng nhập lại bằng mật khẩu để liên kết lại.';
+      });
+      return;
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Lỗi truy xuất thông tin bảo mật.';
+      });
+      return;
+    }
+
+    if (credentials == null) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Không tìm thấy thông tin đăng nhập đã lưu.';
+      });
+      return;
+    }
+
+    final username = credentials['username']!;
+    final password = credentials['password']!;
+
+    // Tự động điền text fields để hiển thị cho người dùng biết tài khoản nào đang đăng nhập
+    _usernameController.text = username;
+    _passwordController.text = password;
+
+    final user = await _authRepository.login(
+      username: username,
+      password: password,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    if (user == null) {
+      setState(() {
+        _errorMessage = 'Tên đăng nhập hoặc mật khẩu đã lưu không đúng hoặc đã hết hạn.';
+      });
+      return;
+    }
+
+    // Yêu cầu quyền thông báo và lấy FCM Token
+    try {
+      FirebaseMessaging messaging = FirebaseMessaging.instance;
+      NotificationSettings settings = await messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
+      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+        String? token = await messaging.getToken();
+        if (token != null) {
+          final scheduleRepo = ApiScheduleRepository(currentUser: user);
+          await scheduleRepo.updateFcmToken(token);
+        }
+      }
+    } catch (e) {
+      print('Firebase Messaging init error: $e');
+    }
+
+    if (!mounted) return;
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MainShell(
+          currentUser: user,
+        ),
+      ),
+    );
   }
 
   @override
@@ -337,36 +449,64 @@ class _LoginScreenState extends State<LoginScreen> {
 
                       const SizedBox(height: 18),
 
-                      SizedBox(
-                        width: double.infinity,
-                        height: 54,
-                        child: ElevatedButton(
-                          onPressed: _isLoading ? null : _login,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2563EB),
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 54,
+                              child: ElevatedButton(
+                                onPressed: _isLoading ? null : _login,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF2563EB),
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(18),
+                                  ),
+                                ),
+                                child: _isLoading
+                                    ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.6,
+                                    color: Colors.white,
+                                  ),
+                                )
+                                    : const Text(
+                                  'Đăng nhập',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
-                          child: _isLoading
-                              ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.6,
-                              color: Colors.white,
+                          if (_isBiometricConfigured) ...[
+                            const SizedBox(width: 12),
+                            SizedBox(
+                              width: 54,
+                              height: 54,
+                              child: ElevatedButton(
+                                onPressed: _isLoading ? null : _loginWithBiometrics,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF10B981),
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  padding: EdgeInsets.zero,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(18),
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.fingerprint,
+                                  size: 28,
+                                ),
+                              ),
                             ),
-                          )
-                              : const Text(
-                            'Đăng nhập',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
+                          ],
+                        ],
                       ),
                     ],
                   ),
