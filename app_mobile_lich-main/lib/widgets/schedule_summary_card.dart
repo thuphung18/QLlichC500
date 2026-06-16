@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
 
 // ScheduleSummaryCard là card thống kê tổng số lịch.
 // Nó hiển thị:
@@ -33,7 +34,7 @@ class ScheduleSummaryCard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withAlpha(10),
@@ -53,7 +54,7 @@ class ScheduleSummaryCard extends StatelessWidget {
                 height: 46,
                 decoration: BoxDecoration(
                   color: accentColor.withAlpha(22),
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
                   Icons.assessment,
@@ -93,7 +94,7 @@ class ScheduleSummaryCard extends StatelessWidget {
                 ),
                 decoration: BoxDecoration(
                   color: accentColor.withAlpha(22),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   '$totalCount lịch',
@@ -116,7 +117,7 @@ class ScheduleSummaryCard extends StatelessWidget {
                 child: _MiniStat(
                   label: 'Sáng',
                   count: morningCount,
-                  color: const Color(0xFF2563EB),
+                  color: Theme.of(context).colorScheme.primary,
                   icon: Icons.wb_sunny,
                 ),
               ),
@@ -125,7 +126,7 @@ class ScheduleSummaryCard extends StatelessWidget {
                 child: _MiniStat(
                   label: 'Chiều',
                   count: afternoonCount,
-                  color: const Color(0xFFF97316),
+                  color: AppColors.warning,
                   icon: Icons.brightness_5,
                 ),
               ),
@@ -134,7 +135,7 @@ class ScheduleSummaryCard extends StatelessWidget {
                 child: _MiniStat(
                   label: 'Tối',
                   count: eveningCount,
-                  color: const Color(0xFF7C3AED),
+                  color: AppColors.accentLight,
                   icon: Icons.nights_stay,
                 ),
               ),
@@ -169,7 +170,7 @@ class _MiniStat extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         color: color.withAlpha(18),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
         children: [

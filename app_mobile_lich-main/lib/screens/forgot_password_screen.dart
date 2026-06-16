@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../repositories/auth_repository.dart';
+import '../theme/app_colors.dart';
 import 'verify_otp_screen.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
@@ -182,7 +183,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           Container(
                             decoration: BoxDecoration(
                               color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                              borderRadius: BorderRadius.circular(20),
+                              borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
                                   color: Colors.black.withAlpha(10),
@@ -210,11 +211,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                 filled: true,
                                 fillColor: Colors.transparent,
                                 border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(20),
+                                  borderRadius: BorderRadius.circular(16),
                                   borderSide: BorderSide.none,
                                 ),
                                 focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(20),
+                                  borderRadius: BorderRadius.circular(16),
                                   borderSide: BorderSide(color: primaryColor, width: 2),
                                 ),
                               ),
@@ -236,10 +237,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: primaryColor,
                                 foregroundColor: Colors.white,
-                                elevation: 8,
-                                shadowColor: primaryColor.withAlpha(128),
+                                elevation: 0,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(20),
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
                               child: _isLoading
@@ -291,20 +291,18 @@ class _MessageBox extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final backgroundColor = isSuccess
-        ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFF0FDF4))
-        : (isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFEF2F2));
+        ? AppColors.success.withAlpha(20)
+        : AppColors.error.withAlpha(20);
 
     final borderColor = isSuccess
-        ? (isDark ? const Color(0xFF059669) : const Color(0xFFBBF7D0))
-        : (isDark ? const Color(0xFFDC2626) : const Color(0xFFFECACA));
+        ? AppColors.success.withAlpha(60)
+        : AppColors.error.withAlpha(60);
 
     final textColor = isSuccess
         ? (isDark ? const Color(0xFF34D399) : const Color(0xFF166534))
         : (isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C));
 
-    final iconColor = isSuccess
-        ? (isDark ? const Color(0xFF10B981) : const Color(0xFF16A34A))
-        : (isDark ? const Color(0xFFEF4444) : const Color(0xFFDC2626));
+    final iconColor = isSuccess ? AppColors.success : AppColors.error;
 
     final icon = isSuccess ? Icons.check_circle_rounded : Icons.error_rounded;
 

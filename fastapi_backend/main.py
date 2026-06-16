@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # Import các router
-from routers import auth, schedules, users
+from routers import auth, schedules, users, departments
 from scheduler import start_scheduler
 
 app = FastAPI(
@@ -25,6 +25,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(schedules.router)
 app.include_router(users.router)
+app.include_router(departments.router)
 
 @app.on_event("startup")
 def startup_event():

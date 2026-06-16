@@ -90,11 +90,13 @@ class ApiScheduleRepository implements ScheduleRepository {
   }
 
   /// Lấy dữ liệu danh mục ban đầu (các khoa, danh sách người dùng)
-  /// Dùng để hiển thị trong Dropdown khi tạo mới lịch biểu
+  /// Backend áp dụng RBAC: Manager chỉ nhận users phòng mình, Admin nhận tất cả.
   @override
   Future<FormDataResponse> getFormData() async {
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/schedules/metadata/form-data'));
+      final response = await http.get(
+        Uri.parse('$_baseUrl/schedules/metadata/form-data?user_id=${currentUser.id}'),
+      );
       if (response.statusCode == 200) {
         return FormDataResponse.fromJson(jsonDecode(response.body));
       }

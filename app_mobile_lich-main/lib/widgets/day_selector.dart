@@ -48,8 +48,8 @@ class DaySelector extends StatelessWidget {
               width: 62,
               padding: const EdgeInsets.symmetric(vertical: 10),
               decoration: BoxDecoration(
-                color: isSelected ? const Color(0xFF2563EB) : Theme.of(context).cardColor,
-                borderRadius: BorderRadius.circular(18),
+                color: isSelected ? Theme.of(context).colorScheme.primary : Theme.of(context).cardColor,
+                borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withAlpha(10),

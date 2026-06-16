@@ -29,12 +29,12 @@ class ScheduleCard extends StatelessWidget {
         child: InkWell(
           // Khi bấm vào card, sẽ mở chi tiết lịch.
           onTap: onTap,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(16),
           child: Ink(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: Theme.of(context).cardColor,
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: Theme.of(context).brightness == Brightness.dark 
                     ? Colors.white10 
@@ -57,7 +57,7 @@ class ScheduleCard extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   decoration: BoxDecoration(
                     color: accentColor.withAlpha(20),
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Column(
                     children: [

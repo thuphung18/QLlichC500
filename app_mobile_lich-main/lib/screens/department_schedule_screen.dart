@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../models/schedule_item.dart';
 import '../repositories/schedule_repository.dart';
+import '../utils/role_helper.dart';
 import '../widgets/app_header.dart';
 import '../widgets/day_selector.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/schedule_summary_card.dart';
 import '../widgets/session_section.dart';
+import '../theme/app_colors.dart';
 import 'create_schedule_screen.dart';
 
 // DepartmentScheduleScreen là màn hình "Lịch khoa".
@@ -64,12 +66,11 @@ class _DepartmentScheduleScreenState extends State<DepartmentScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isAdmin = widget.repository.currentUser.role.toLowerCase() == 'quản trị viên' || 
-                    widget.repository.currentUser.role.toLowerCase() == 'admin';
+    final canManage = RoleHelper.canManageSchedule(widget.repository.currentUser.role);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      floatingActionButton: isAdmin ? FloatingActionButton(
+      floatingActionButton: canManage ? FloatingActionButton(
         onPressed: () async {
           final result = await Navigator.push(
             context,
@@ -83,7 +84,7 @@ class _DepartmentScheduleScreenState extends State<DepartmentScheduleScreen> {
             });
           }
         },
-        backgroundColor: const Color(0xFF0F766E),
+        backgroundColor: AppColors.success,
         child: const Icon(Icons.add, color: Colors.white),
       ) : null,
       body: FutureBuilder<List<ScheduleItem>>(
@@ -106,7 +107,7 @@ class _DepartmentScheduleScreenState extends State<DepartmentScheduleScreen> {
               title: 'LỊCH CỦA KHOA',
               subtitle: 'Lịch chung của ${widget.departmentName}',
               icon: Icons.business,
-              accentColor: const Color(0xFF0F766E),
+              accentColor: AppColors.success,
             ),
 
             const SizedBox(height: 16),
@@ -128,7 +129,7 @@ class _DepartmentScheduleScreenState extends State<DepartmentScheduleScreen> {
               morningCount: morningItems.length,
               afternoonCount: afternoonItems.length,
               eveningCount: eveningItems.length,
-              accentColor: const Color(0xFF0F766E),
+              accentColor: AppColors.success,
               title: 'Tổng quan lịch khoa',
               subtitle: 'Thống kê lịch chung của khoa theo ngày',
             ),
@@ -146,16 +147,16 @@ class _DepartmentScheduleScreenState extends State<DepartmentScheduleScreen> {
                 title: 'SÁNG',
                 icon: Icons.wb_sunny,
                 items: morningItems,
-                accentColor: const Color(0xFF0F766E),
-                isAdmin: isAdmin,
+                accentColor: AppColors.success,
+                isAdmin: canManage,
                 onDelete: _deleteSchedule,
               ),
               SessionSection(
                 title: 'CHIỀU',
                 icon: Icons.brightness_5,
                 items: afternoonItems,
-                accentColor: const Color(0xFFF97316),
-                isAdmin: isAdmin,
+                accentColor: AppColors.warning,
+                isAdmin: canManage,
                 onDelete: _deleteSchedule,
               ),
               SessionSection(
@@ -163,7 +164,7 @@ class _DepartmentScheduleScreenState extends State<DepartmentScheduleScreen> {
                 icon: Icons.nights_stay,
                 items: eveningItems,
                 accentColor: const Color(0xFF7C3AED),
-                isAdmin: isAdmin,
+                isAdmin: canManage,
                 onDelete: _deleteSchedule,
               ),
             ],

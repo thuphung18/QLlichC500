@@ -23,8 +23,8 @@ class EmptyState extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(28),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         children: [
@@ -36,8 +36,8 @@ class EmptyState extends StatelessWidget {
           const SizedBox(height: 14),
           Text(
             title,
-            style: const TextStyle(
-              color: Color(0xFF0F172A),
+            style: TextStyle(
+              color: Theme.of(context).textTheme.bodyLarge?.color ?? const Color(0xFF0F172A),
               fontSize: 18,
               fontWeight: FontWeight.w900,
             ),
@@ -46,8 +46,8 @@ class EmptyState extends StatelessWidget {
           Text(
             message,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFF64748B),
+            style: TextStyle(
+              color: Theme.of(context).textTheme.bodyMedium?.color ?? const Color(0xFF64748B),
               fontSize: 14,
               height: 1.4,
               fontWeight: FontWeight.w500,

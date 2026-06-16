@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../repositories/auth_repository.dart';
+import '../theme/app_colors.dart';
 import 'reset_password_screen.dart';
 
 // Màn hình quên mật khẩu bước 2.
@@ -136,9 +137,9 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FB),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF2563EB),
+        backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
         centerTitle: true,
         title: const Text(
@@ -158,20 +159,20 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
                 width: 86,
                 height: 86,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF2563EB).withAlpha(25),
-                  borderRadius: BorderRadius.circular(30),
+                  color: Theme.of(context).colorScheme.primary.withAlpha(25),
+                  borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.verified_user,
-                  color: Color(0xFF2563EB),
+                  color: Theme.of(context).colorScheme.primary,
                   size: 46,
                 ),
               ),
               const SizedBox(height: 20),
-              const Text(
+              Text(
                 'Nhập mã xác thực',
                 style: TextStyle(
-                  color: Color(0xFF0F172A),
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
                   fontSize: 27,
                   fontWeight: FontWeight.w900,
                 ),
@@ -192,8 +193,8 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(26),
+                  color: Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withAlpha(12),
@@ -223,9 +224,11 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
                         labelText: 'Mã xác thực',
                         hintText: '••••••',
                         filled: true,
-                        fillColor: const Color(0xFFF8FAFC),
+                        fillColor: Theme.of(context).brightness == Brightness.dark
+                            ? Colors.white.withAlpha(12)
+                            : AppColors.backgroundLight,
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(18),
+                          borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
                         ),
                       ),
@@ -247,11 +250,11 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
                       child: ElevatedButton(
                         onPressed: _isLoading ? null : _verifyCode,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2563EB),
+                          backgroundColor: Theme.of(context).colorScheme.primary,
                           foregroundColor: Colors.white,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(18),
+                            borderRadius: BorderRadius.circular(12),
                           ),
                         ),
                         child: _isLoading
@@ -303,14 +306,14 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(18),
+                    color: Theme.of(context).colorScheme.primary.withAlpha(15),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     'Mã OTP demo là: $_debugCode\nSau này mã này sẽ được gửi qua SMS hoặc Email từ backend.',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Color(0xFF1D4ED8),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
                       fontSize: 13,
                       height: 1.45,
                       fontWeight: FontWeight.w700,
@@ -337,17 +340,21 @@ class _MessageBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final backgroundColor =
-    isSuccess ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final borderColor =
-    isSuccess ? const Color(0xFFBBF7D0) : const Color(0xFFFECACA);
+    final backgroundColor = isSuccess
+        ? AppColors.success.withAlpha(20)
+        : AppColors.error.withAlpha(20);
 
-    final textColor =
-    isSuccess ? const Color(0xFF166534) : const Color(0xFFB91C1C);
+    final borderColor = isSuccess
+        ? AppColors.success.withAlpha(60)
+        : AppColors.error.withAlpha(60);
 
-    final iconColor =
-    isSuccess ? const Color(0xFF16A34A) : const Color(0xFFDC2626);
+    final textColor = isSuccess
+        ? (isDark ? const Color(0xFF34D399) : const Color(0xFF166534))
+        : (isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C));
+
+    final iconColor = isSuccess ? AppColors.success : AppColors.error;
 
     final icon = isSuccess ? Icons.check_circle_outline : Icons.error_outline;
 

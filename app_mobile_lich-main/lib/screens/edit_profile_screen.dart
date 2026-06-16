@@ -113,9 +113,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     onPressed: _submit,
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      backgroundColor: const Color(0xFF2563EB),
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: const Text('Lưu thay đổi', style: TextStyle(fontSize: 16, color: Colors.white)),
+                    child: const Text('Lưu thay đổi', style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),

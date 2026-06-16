@@ -120,3 +120,26 @@ class CreateUserRequest(BaseModel):
     departmentId: str
     email: Optional[str] = None
     phone: Optional[str] = None
+
+class AdminUpdateUserRequest(BaseModel):
+    """Schema Admin dùng để chỉnh sửa thông tin, role, phòng ban, trạng thái tài khoản."""
+    fullName: str
+    role: str
+    unit: str
+    departmentId: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    isActive: bool = True  # True = hoạt động, False = khóa
+
+class UserDetail(BaseModel):
+    """Schema trả về thông tin đầy đủ của một user cho trang quản trị."""
+    id: str
+    username: str
+    fullName: str
+    role: str
+    unit: str
+    departmentId: str
+    departmentName: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    isActive: bool

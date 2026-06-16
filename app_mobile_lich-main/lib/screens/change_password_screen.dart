@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../models/update_password_request.dart';
 import '../data/api_user_repository.dart';
 
@@ -130,9 +130,10 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                     onPressed: _submit,
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      backgroundColor: const Color(0xFF2563EB),
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: const Text('Đổi mật khẩu', style: TextStyle(fontSize: 16, color: Colors.white)),
+                    child: const Text('Đổi mật khẩu', style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),

@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 
 import '../main.dart';
 import '../models/user_profile.dart';
+import '../utils/role_helper.dart';
 import '../widgets/app_header.dart';
+import 'admin_dashboard_screen.dart';
 import 'create_user_screen.dart';
 import 'edit_profile_screen.dart';
 import 'change_password_screen.dart';
 import '../services/biometric_service.dart';
 import '../data/remember_login_storage.dart';
+import '../theme/app_colors.dart';
 
 // ProfileScreen là màn hình cá nhân.
 // Hiển thị thông tin user đang đăng nhập.
@@ -149,9 +152,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       filled: true,
                       fillColor: Theme.of(context).brightness == Brightness.dark
                           ? Colors.white.withAlpha(12)
-                          : const Color(0xFFF8FAFC),
+                          : AppColors.backgroundLight,
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(18),
+                        borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
                       ),
                     ),
@@ -167,8 +170,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ElevatedButton(
                   onPressed: () => Navigator.pop(context, controller.text),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2563EB),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                   ),
                   child: const Text('Xác nhận', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -190,7 +193,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           title: 'CÁ NHÂN',
           subtitle: 'Thông tin tài khoản và đơn vị công tác',
           icon: Icons.account_circle,
-          accentColor: Color(0xFF2563EB),
+          accentColor: AppColors.primaryLight,
         ),
 
         const SizedBox(height: 18),
@@ -199,12 +202,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Theme.of(context).brightness == Brightness.light ? AppColors.borderLight : AppColors.borderDark),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withAlpha(10),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
+                color: Colors.black.withAlpha(8),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
@@ -214,12 +218,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 width: 84,
                 height: 84,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF2563EB).withAlpha(25),
-                  borderRadius: BorderRadius.circular(28),
+                  color: Theme.of(context).colorScheme.primary.withAlpha(25),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.person,
-                  color: Color(0xFF2563EB),
+                  color: Theme.of(context).colorScheme.primary,
                   size: 46,
                 ),
               ),
@@ -338,12 +342,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF2563EB).withAlpha(22),
-                  borderRadius: BorderRadius.circular(15),
+                  color: Theme.of(context).colorScheme.primary.withAlpha(22),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.dark_mode,
-                  color: Color(0xFF2563EB),
+                  color: Theme.of(context).colorScheme.primary,
                 ),
               ),
               const SizedBox(width: 13),
@@ -362,7 +366,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onChanged: (value) {
                   globalThemeProvider.toggleTheme();
                 },
-                activeColor: const Color(0xFF2563EB),
+                activeColor: Theme.of(context).colorScheme.primary,
               ),
             ],
           ),
@@ -383,12 +387,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withAlpha(22),
-                    borderRadius: BorderRadius.circular(15),
+                    color: AppColors.success.withAlpha(22),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(
                     Icons.fingerprint,
-                    color: Color(0xFF10B981),
+                    color: AppColors.success,
                   ),
                 ),
                 const SizedBox(width: 13),
@@ -405,7 +409,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Switch(
                   value: _isBiometricEnabled,
                   onChanged: _toggleBiometric,
-                  activeColor: const Color(0xFF10B981),
+                  activeColor: AppColors.success,
                 ),
               ],
             ),
@@ -413,7 +417,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
         const SizedBox(height: 10),
 
-        if (widget.profile.role.toLowerCase() == 'quản trị viên' || widget.profile.role.toLowerCase() == 'admin')
+        // Nút quản trị - hiển thị theo role
+        if (RoleHelper.isAdmin(widget.profile.role))
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: SizedBox(
@@ -424,18 +429,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => CreateUserScreen(currentUser: widget.profile),
+                      builder: (context) => AdminDashboardScreen(
+                        adminProfile: widget.profile,
+                      ),
                     ),
                   );
                 },
-                icon: const Icon(Icons.person_add),
-                label: const Text('Tạo tài khoản mới'),
+                icon: const Icon(Icons.admin_panel_settings),
+                label: const Text('Quản trị hệ thống'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF10B981),
+                  backgroundColor: AppColors.accentLight,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   textStyle: const TextStyle(
                     fontSize: 15,
@@ -443,6 +450,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
               ),
+            ),
+          )
+        else if (RoleHelper.isManager(widget.profile.role))
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF97316).withAlpha(15),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFF97316).withAlpha(60)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF97316).withAlpha(20),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.manage_accounts, color: Color(0xFFF97316)),
+                ),
+                const SizedBox(width: 13),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Trưởng phòng', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFFF97316))),
+                      Text('Bạn có quyền tạo và phân công lịch phiếu phòng ban', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
 
@@ -458,7 +497,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               foregroundColor: Colors.white,
               elevation: 0,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(12),
               ),
               textStyle: const TextStyle(
                 fontSize: 15,
@@ -499,12 +538,12 @@ class _ProfileInfoCard extends StatelessWidget {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: const Color(0xFF2563EB).withAlpha(22),
-              borderRadius: BorderRadius.circular(15),
+              color: Theme.of(context).colorScheme.primary.withAlpha(22),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
               icon,
-              color: const Color(0xFF2563EB),
+              color: Theme.of(context).colorScheme.primary,
             ),
           ),
           const SizedBox(width: 13),

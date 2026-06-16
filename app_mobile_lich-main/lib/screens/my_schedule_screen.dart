@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../models/schedule_item.dart';
 import '../repositories/schedule_repository.dart';
+import '../utils/role_helper.dart';
 import '../widgets/app_header.dart';
 import '../widgets/day_selector.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/schedule_summary_card.dart';
 import '../widgets/session_section.dart';
+import '../theme/app_colors.dart';
 
 // MyScheduleScreen là màn hình "Lịch của tôi".
 // Dữ liệu lấy từ repository.getMySchedules().
@@ -74,17 +76,16 @@ class _MyScheduleScreenState extends State<MyScheduleScreen> {
         final afternoonItems = _filterBySession(schedules, 'afternoon');
         final eveningItems = _filterBySession(schedules, 'evening');
         
-        final isAdmin = widget.repository.currentUser.role.toLowerCase() == 'quản trị viên' || 
-                        widget.repository.currentUser.role.toLowerCase() == 'admin';
+        final canManage = RoleHelper.canManageSchedule(widget.repository.currentUser.role);
 
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
-            const AppHeader(
+            AppHeader(
               title: 'LỊCH CỦA TÔI',
               subtitle: 'Các lịch có liên quan trực tiếp đến bạn',
               icon: Icons.person_pin_circle,
-              accentColor: Color(0xFF2563EB),
+              accentColor: Theme.of(context).colorScheme.primary,
             ),
 
             const SizedBox(height: 16),
@@ -106,7 +107,7 @@ class _MyScheduleScreenState extends State<MyScheduleScreen> {
               morningCount: morningItems.length,
               afternoonCount: afternoonItems.length,
               eveningCount: eveningItems.length,
-              accentColor: const Color(0xFF2563EB),
+              accentColor: Theme.of(context).colorScheme.primary,
               title: 'Tổng quan lịch của tôi',
               subtitle: 'Thống kê các lịch liên quan trực tiếp đến bạn',
             ),
@@ -124,16 +125,16 @@ class _MyScheduleScreenState extends State<MyScheduleScreen> {
                 title: 'SÁNG',
                 icon: Icons.wb_sunny,
                 items: morningItems,
-                accentColor: const Color(0xFF2563EB),
-                isAdmin: isAdmin,
+                accentColor: Theme.of(context).colorScheme.primary,
+                isAdmin: canManage,
                 onDelete: _deleteSchedule,
               ),
               SessionSection(
                 title: 'CHIỀU',
                 icon: Icons.brightness_5,
                 items: afternoonItems,
-                accentColor: const Color(0xFFF97316),
-                isAdmin: isAdmin,
+                accentColor: AppColors.warning,
+                isAdmin: canManage,
                 onDelete: _deleteSchedule,
               ),
               SessionSection(
@@ -141,7 +142,7 @@ class _MyScheduleScreenState extends State<MyScheduleScreen> {
                 icon: Icons.nights_stay,
                 items: eveningItems,
                 accentColor: const Color(0xFF7C3AED),
-                isAdmin: isAdmin,
+                isAdmin: canManage,
                 onDelete: _deleteSchedule,
               ),
             ],

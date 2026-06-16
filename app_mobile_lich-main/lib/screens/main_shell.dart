@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/api_schedule_repository.dart';
 import '../data/remember_login_storage.dart';
 import '../models/user_profile.dart';
+import '../utils/role_helper.dart';
 import 'department_schedule_screen.dart';
 import 'login_screen.dart';
 import 'my_schedule_screen.dart';
@@ -49,11 +50,11 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _buildPages() {
-    final isAdmin = _currentUser.role.toLowerCase() == 'quản trị viên' || 
-                    _currentUser.role.toLowerCase() == 'admin';
+    final isAdmin = RoleHelper.isAdmin(_currentUser.role);
+    final isManager = RoleHelper.isManager(_currentUser.role);
 
     _pages = [
-      WeekScheduleScreen(repository: _repository, isAdmin: isAdmin),
+      WeekScheduleScreen(repository: _repository, isAdmin: isAdmin || isManager),
       MyScheduleScreen(repository: _repository),
       DepartmentScheduleScreen(
         repository: _repository,
@@ -163,9 +164,9 @@ class _MainShellState extends State<MainShell> {
           color: Theme.of(context).cardColor,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withAlpha(12),
-              blurRadius: 18,
-              offset: const Offset(0, -6),
+              color: Colors.black.withAlpha(8),
+              blurRadius: 12,
+              offset: const Offset(0, -4),
             ),
           ],
         ),
@@ -191,9 +192,10 @@ class _MainShellState extends State<MainShell> {
           items: [
             BottomNavigationBarItem(
               icon: const Icon(Icons.calendar_month),
-              label: (widget.currentUser.role.toLowerCase() == 'quản trị viên' || 
-                      widget.currentUser.role.toLowerCase() == 'admin') 
-                      ? 'Toàn trường'
+              label: RoleHelper.isAdmin(widget.currentUser.role)
+                  ? 'Toàn trường'
+                  : RoleHelper.isManager(widget.currentUser.role)
+                      ? 'Lịch phòng'
                       : 'Lịch tuần',
             ),
             const BottomNavigationBarItem(

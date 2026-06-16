@@ -5,6 +5,7 @@ import '../data/api_user_repository.dart';
 import '../models/create_user_request.dart';
 import '../models/department.dart';
 import '../models/user_profile.dart';
+import '../utils/role_helper.dart';
 
 class CreateUserScreen extends StatefulWidget {
   final UserProfile currentUser;
@@ -24,8 +25,9 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
 
-  String _selectedRole = 'Sinh viên';
-  final List<String> _roles = ['Sinh viên', 'Giảng viên', 'Cán bộ', 'Quản trị viên'];
+  // Sử dụng danh sách role chuẩn từ RoleHelper
+  String _selectedRole = RoleHelper.availableRoles.first;
+  final List<String> _roles = RoleHelper.availableRoles;
 
   String _unit = '';
   String _selectedDepartmentId = '';
@@ -91,9 +93,9 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
       phone: _phoneController.text.trim().isNotEmpty ? _phoneController.text.trim() : null,
     );
 
-    // Gửi yêu cầu qua API
+    // Gửi yêu cầu qua API, truyền adminId để backend kiểm tra quyền
     final userRepo = ApiUserRepository();
-    final success = await userRepo.createUser(request);
+    final success = await userRepo.createUser(request, widget.currentUser.id);
 
     // Dừng hiển thị vòng tròn loading
     setState(() {
@@ -107,8 +109,8 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Tạo tài khoản thành công! Mật khẩu mặc định là 123456')),
       );
-      // Trở lại màn hình trước đó
-      Navigator.pop(context);
+      // Trả về true để màn hình trước biết cần reload
+      Navigator.pop(context, true);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Tạo tài khoản thất bại! Có thể username đã tồn tại.')),
@@ -215,7 +217,7 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
                       child: ElevatedButton(
                         onPressed: _isLoading ? null : _submitForm,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2563EB),
+                          backgroundColor: Theme.of(context).colorScheme.primary,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                         child: _isLoading

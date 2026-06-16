@@ -30,7 +30,7 @@ class AppHeader extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
             color: accentColor.withAlpha(50),
@@ -46,7 +46,7 @@ class AppHeader extends StatelessWidget {
             height: 52,
             decoration: BoxDecoration(
               color: Colors.white.withAlpha(40),
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
               icon,

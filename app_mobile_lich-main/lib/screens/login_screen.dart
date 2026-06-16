@@ -7,6 +7,7 @@ import '../data/api_schedule_repository.dart';
 import '../data/remember_login_storage.dart';
 import '../repositories/auth_repository.dart';
 import '../services/biometric_service.dart';
+import '../theme/app_colors.dart';
 import 'forgot_password_screen.dart';
 import 'main_shell.dart';
 
@@ -303,7 +304,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) {
                         return Container(
-                          color: const Color(0xFF2563EB),
+                          color: AppColors.primaryLight,
                           child: const Icon(
                             Icons.school,
                             color: Colors.white,
@@ -340,12 +341,12 @@ class _LoginScreenState extends State<LoginScreen> {
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     color: Theme.of(context).cardColor,
-                    borderRadius: BorderRadius.circular(26),
+                    borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withAlpha(12),
-                        blurRadius: 22,
-                        offset: const Offset(0, 10),
+                        color: Colors.black.withAlpha(8),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4),
                       ),
                     ],
                   ),
@@ -359,9 +360,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           hintText: '',
                           prefixIcon: const Icon(Icons.person),
                           filled: true,
-                          fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.white.withAlpha(12) : const Color(0xFFF8FAFC),
+                          fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.white.withAlpha(12) : AppColors.backgroundLight,
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(18),
+                            borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
                           ),
                         ),
@@ -391,9 +392,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                           filled: true,
-                          fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.white.withAlpha(12) : const Color(0xFFF8FAFC),
+                          fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.white.withAlpha(12) : AppColors.backgroundLight,
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(18),
+                            borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
                           ),
                         ),
@@ -405,7 +406,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         children: [
                           Checkbox(
                             value: _rememberMe,
-                            activeColor: const Color(0xFF2563EB),
+                            activeColor: Theme.of(context).colorScheme.primary,
                             onChanged: (value) {
                               setState(() {
                                 _rememberMe = value ?? false;
@@ -428,10 +429,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           const Spacer(),
                           TextButton(
                             onPressed: _goToForgotPassword,
-                            child: const Text(
+                            child: Text(
                               'Quên mật khẩu?',
                               style: TextStyle(
-                                color: Color(0xFF2563EB),
+                                color: Theme.of(context).colorScheme.primary,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
@@ -457,11 +458,11 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: ElevatedButton(
                                 onPressed: _isLoading ? null : _login,
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF2563EB),
+                                  backgroundColor: Theme.of(context).colorScheme.primary,
                                   foregroundColor: Colors.white,
                                   elevation: 0,
                                   shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(18),
+                                    borderRadius: BorderRadius.circular(12),
                                   ),
                                 ),
                                 child: _isLoading
@@ -491,12 +492,12 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: ElevatedButton(
                                 onPressed: _isLoading ? null : _loginWithBiometrics,
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF10B981),
+                                  backgroundColor: AppColors.success,
                                   foregroundColor: Colors.white,
                                   elevation: 0,
                                   padding: EdgeInsets.zero,
                                   shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(18),
+                                    borderRadius: BorderRadius.circular(12),
                                   ),
                                 ),
                                 child: const Icon(
@@ -555,16 +556,14 @@ class _MessageBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final backgroundColor =
-    isSuccess ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2);
+    isSuccess ? AppColors.success.withAlpha(20) : AppColors.error.withAlpha(20);
 
     final borderColor =
-    isSuccess ? const Color(0xFFBBF7D0) : const Color(0xFFFECACA);
+    isSuccess ? AppColors.success.withAlpha(60) : AppColors.error.withAlpha(60);
 
-    final textColor =
-    isSuccess ? const Color(0xFF166534) : const Color(0xFFB91C1C);
+    final textColor = isSuccess ? AppColors.success : AppColors.error;
 
-    final iconColor =
-    isSuccess ? const Color(0xFF16A34A) : const Color(0xFFDC2626);
+    final iconColor = isSuccess ? AppColors.success : AppColors.error;
 
     final icon = isSuccess ? Icons.check_circle_outline : Icons.error_outline;
 

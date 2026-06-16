@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'screens/login_screen.dart';
 import 'services/notification_service.dart';
 import 'theme/theme_provider.dart';
+import 'theme/app_colors.dart';
 
 final ThemeProvider globalThemeProvider = ThemeProvider();
 
@@ -51,37 +53,79 @@ class ScheduleApp extends StatelessWidget {
           
           themeMode: globalThemeProvider.themeMode,
 
-          // Theme chung của toàn bộ app.
+          // Theme Enterprise chuẩn
           theme: ThemeData(
             useMaterial3: true,
-            scaffoldBackgroundColor: const Color(0xFFF5F7FB),
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xFF2563EB),
-              brightness: Brightness.light,
+            scaffoldBackgroundColor: AppColors.backgroundLight,
+            textTheme: GoogleFonts.interTextTheme(Theme.of(context).textTheme).apply(
+              bodyColor: AppColors.textPrimaryLight,
+              displayColor: AppColors.textPrimaryLight,
+            ),
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.primaryLight,
+              secondary: AppColors.accentLight,
+              surface: AppColors.surfaceLight,
+              onPrimary: Colors.white,
+              onSurface: AppColors.textPrimaryLight,
+              error: AppColors.error,
+            ),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: AppColors.primaryLight,
+              foregroundColor: Colors.white,
+              centerTitle: true,
+              elevation: 0,
+            ),
+            cardTheme: CardThemeData(
+              color: AppColors.surfaceLight,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: const BorderSide(color: AppColors.borderLight),
+              ),
+            ),
+            bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+              backgroundColor: AppColors.surfaceLight,
+              unselectedItemColor: AppColors.textSecondaryLight,
+              selectedItemColor: AppColors.primaryLight,
+              type: BottomNavigationBarType.fixed,
             ),
           ),
           
           darkTheme: ThemeData(
             useMaterial3: true,
-            scaffoldBackgroundColor: const Color(0xFF0F172A),
-            cardColor: const Color(0xFF1E293B),
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xFF3B82F6),
-              brightness: Brightness.dark,
-              surface: const Color(0xFF1E293B),
+            scaffoldBackgroundColor: AppColors.backgroundDark,
+            cardColor: AppColors.surfaceDark,
+            textTheme: GoogleFonts.interTextTheme(Theme.of(context).textTheme).apply(
+              bodyColor: AppColors.textPrimaryDark,
+              displayColor: AppColors.textPrimaryDark,
             ),
-            textTheme: const TextTheme(
-              bodyLarge: TextStyle(color: Colors.white),
-              bodyMedium: TextStyle(color: Color(0xFFCBD5E1)),
+            colorScheme: const ColorScheme.dark(
+              primary: AppColors.primaryDark,
+              secondary: AppColors.accentLight,
+              surface: AppColors.surfaceDark,
+              onPrimary: Colors.white,
+              onSurface: AppColors.textPrimaryDark,
+              error: AppColors.error,
             ),
             appBarTheme: const AppBarTheme(
-              backgroundColor: Color(0xFF0F172A),
+              backgroundColor: AppColors.surfaceDark,
               foregroundColor: Colors.white,
+              centerTitle: true,
+              elevation: 0,
+            ),
+            cardTheme: CardThemeData(
+              color: AppColors.surfaceDark,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: const BorderSide(color: AppColors.borderDark),
+              ),
             ),
             bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-              backgroundColor: Color(0xFF1E293B),
-              unselectedItemColor: Color(0xFF94A3B8),
-              selectedItemColor: Color(0xFF3B82F6),
+              backgroundColor: AppColors.surfaceDark,
+              unselectedItemColor: AppColors.textSecondaryDark,
+              selectedItemColor: AppColors.primaryDark,
+              type: BottomNavigationBarType.fixed,
             ),
           ),
 

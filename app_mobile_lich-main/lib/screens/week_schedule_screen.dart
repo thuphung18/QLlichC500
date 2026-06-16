@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../models/schedule_item.dart';
 import '../repositories/schedule_repository.dart';
+import '../utils/role_helper.dart';
 import '../widgets/app_header.dart';
 import '../widgets/day_selector.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/schedule_summary_card.dart';
 import '../widgets/session_section.dart';
 import '../services/notification_service.dart';
+import '../theme/app_colors.dart';
 import 'create_schedule_screen.dart';
 
 // WeekScheduleScreen là màn hình "Lịch tuần".
@@ -65,12 +67,12 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isAdmin = widget.repository.currentUser.role.toLowerCase() == 'quản trị viên' || 
-                    widget.repository.currentUser.role.toLowerCase() == 'admin';
+    final canManage = RoleHelper.canManageSchedule(widget.repository.currentUser.role);
+    final isAdmin = RoleHelper.isAdmin(widget.repository.currentUser.role);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      floatingActionButton: isAdmin ? FloatingActionButton(
+      floatingActionButton: canManage ? FloatingActionButton(
         onPressed: () async {
           final result = await Navigator.push(
             context,
@@ -96,7 +98,7 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
             });
           }
         },
-        backgroundColor: const Color(0xFF2563EB),
+        backgroundColor: Theme.of(context).colorScheme.primary,
         child: const Icon(Icons.add, color: Colors.white),
       ) : null,
       body: FutureBuilder<List<ScheduleItem>>(
@@ -120,7 +122,7 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
               title: widget.isAdmin ? 'LỊCH TOÀN TRƯỜNG' : 'LỊCH TUẦN',
               subtitle: 'Từ 08/6 - 14/6/2026',
               icon: Icons.calendar_month,
-              accentColor: const Color(0xFF2563EB),
+              accentColor: Theme.of(context).colorScheme.primary,
             ),
 
             const SizedBox(height: 16),
@@ -142,7 +144,7 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
               morningCount: morningItems.length,
               afternoonCount: afternoonItems.length,
               eveningCount: eveningItems.length,
-              accentColor: const Color(0xFF2563EB),
+              accentColor: Theme.of(context).colorScheme.primary,
               title: 'Tổng quan lịch tuần',
               subtitle: 'Thống kê theo ngày đang chọn',
             ),
@@ -160,16 +162,16 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
                 title: 'SÁNG',
                 icon: Icons.wb_sunny,
                 items: morningItems,
-                accentColor: const Color(0xFF2563EB),
-                isAdmin: widget.isAdmin,
+                accentColor: Theme.of(context).colorScheme.primary,
+                isAdmin: canManage,
                 onDelete: _deleteSchedule,
               ),
               SessionSection(
                 title: 'CHIỀU',
                 icon: Icons.brightness_5,
                 items: afternoonItems,
-                accentColor: const Color(0xFFF97316),
-                isAdmin: widget.isAdmin,
+                accentColor: AppColors.warning,
+                isAdmin: canManage,
                 onDelete: _deleteSchedule,
               ),
               SessionSection(
@@ -177,7 +179,7 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
                 icon: Icons.nights_stay,
                 items: eveningItems,
                 accentColor: const Color(0xFF7C3AED),
-                isAdmin: widget.isAdmin,
+                isAdmin: canManage,
                 onDelete: _deleteSchedule,
               ),
             ],

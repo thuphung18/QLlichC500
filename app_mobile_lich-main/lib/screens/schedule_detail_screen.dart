@@ -169,19 +169,19 @@ class ScheduleDetailScreen extends StatelessWidget {
 
           const SizedBox(height: 12),
 
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Theme.of(context).cardColor,
-              borderRadius: BorderRadius.circular(22),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withAlpha(10),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(10),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
             child: Text(
               item.note,
               style: TextStyle(
@@ -233,7 +233,7 @@ class _HeaderCard extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
             color: accentColor.withAlpha(55),
@@ -323,7 +323,7 @@ class _InfoBox extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withAlpha(10),
@@ -364,7 +364,7 @@ class _InfoRow extends StatelessWidget {
             height: 42,
             decoration: BoxDecoration(
               color: accentColor.withAlpha(22),
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
               icon,

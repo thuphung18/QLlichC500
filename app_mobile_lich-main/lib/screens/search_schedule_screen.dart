@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../models/schedule_item.dart';
 import '../repositories/schedule_repository.dart';
+import '../utils/role_helper.dart';
 import '../widgets/app_header.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/schedule_card.dart';
+import '../theme/app_colors.dart';
 import 'schedule_detail_screen.dart';
 
 // SearchScheduleScreen là màn hình tìm kiếm lịch.
@@ -69,17 +71,16 @@ class _SearchScheduleScreenState extends State<SearchScheduleScreen> {
         final isLoading = snapshot.connectionState == ConnectionState.waiting;
         final results = snapshot.data ?? [];
         
-        final isAdmin = widget.repository.currentUser.role.toLowerCase() == 'quản trị viên' || 
-                        widget.repository.currentUser.role.toLowerCase() == 'admin';
+        final canManage = RoleHelper.canManageSchedule(widget.repository.currentUser.role);
 
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
-            const AppHeader(
+            AppHeader(
               title: 'TÌM KIẾM',
               subtitle: 'Tra cứu lịch theo tên, phòng, đơn vị hoặc người phụ trách',
               icon: Icons.search,
-              accentColor: Color(0xFF7C3AED),
+              accentColor: Theme.of(context).colorScheme.primary,
             ),
 
             const SizedBox(height: 16),
@@ -96,13 +97,15 @@ class _SearchScheduleScreenState extends State<SearchScheduleScreen> {
                 hintText: 'Nhập từ khóa tìm kiếm...',
                 prefixIcon: const Icon(Icons.search),
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.white.withAlpha(12)
+                    : AppColors.backgroundLight,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 14,
                 ),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
                 ),
               ),
@@ -122,15 +125,15 @@ class _SearchScheduleScreenState extends State<SearchScheduleScreen> {
               ...results.map(
                     (item) => ScheduleCard(
                   item: item,
-                  accentColor: _getColorByItem(item),
+                  accentColor: _getColorByItem(item, context),
                   onTap: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (context) => ScheduleDetailScreen(
                           item: item,
-                          accentColor: _getColorByItem(item),
-                          isAdmin: isAdmin,
+                          accentColor: _getColorByItem(item, context),
+                          isAdmin: canManage,
                           onDelete: () => _deleteSchedule(item),
                         ),
                       ),
@@ -144,15 +147,15 @@ class _SearchScheduleScreenState extends State<SearchScheduleScreen> {
     );
   }
 
-  Color _getColorByItem(ScheduleItem item) {
+  Color _getColorByItem(ScheduleItem item, BuildContext context) {
     if (item.isMine) {
-      return const Color(0xFF2563EB);
+      return Theme.of(context).colorScheme.primary;
     }
 
     if (item.isDepartment) {
-      return const Color(0xFF0F766E);
+      return AppColors.success;
     }
 
-    return const Color(0xFF7C3AED);
+    return AppColors.accentLight;
   }
 }
