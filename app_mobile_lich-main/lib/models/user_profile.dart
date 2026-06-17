@@ -28,6 +28,9 @@ class UserProfile {
   /// Số điện thoại liên lạc
   final String phone;
 
+  /// Token phiên đăng nhập hiện tại
+  final String? sessionToken;
+
   /// Constructor
   const UserProfile({
     required this.id,
@@ -39,6 +42,7 @@ class UserProfile {
     required this.departmentName,
     required this.email,
     required this.phone,
+    this.sessionToken,
   });
 
   /// Hàm [fromJson] dùng để khởi tạo một Object [UserProfile] 
@@ -54,6 +58,7 @@ class UserProfile {
       departmentName: json['departmentName']?.toString() ?? '',
       email: json['email']?.toString() ?? '',
       phone: json['phone']?.toString() ?? '',
+      sessionToken: json['sessionToken']?.toString(),
     );
   }
 }

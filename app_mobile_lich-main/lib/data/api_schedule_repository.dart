@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'http_client.dart';
 
 import '../models/user_profile.dart';
 import '../models/schedule_item.dart';
@@ -22,7 +22,10 @@ class ApiScheduleRepository implements ScheduleRepository {
   /// Hàm phụ trợ (helper) dùng chung để lấy một danh sách lịch từ URL cụ thể.
   Future<List<ScheduleItem>> _fetchSchedules(String url) async {
     try {
-      final response = await http.get(Uri.parse(url));
+      final response = await HttpClient.get(
+        Uri.parse(url),
+        headers: {'Authorization': 'Bearer ${currentUser.sessionToken}'},
+      );
 
       if (response.statusCode == 200) {
         // Giải mã JSON thành List dynamic
@@ -64,9 +67,12 @@ class ApiScheduleRepository implements ScheduleRepository {
   /// Cập nhật FCM Token (Dùng cho chức năng Firebase Cloud Messaging - Gửi thông báo đẩy)
   Future<void> updateFcmToken(String fcmToken) async {
     try {
-      final response = await http.post(
+      final response = await HttpClient.post(
         Uri.parse('$_baseUrl/auth/fcm-token'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${currentUser.sessionToken}'
+        },
         body: jsonEncode({
           'user_id': currentUser.id,
           'fcm_token': fcmToken,
@@ -94,8 +100,9 @@ class ApiScheduleRepository implements ScheduleRepository {
   @override
   Future<FormDataResponse> getFormData() async {
     try {
-      final response = await http.get(
+      final response = await HttpClient.get(
         Uri.parse('$_baseUrl/schedules/metadata/form-data?user_id=${currentUser.id}'),
+        headers: {'Authorization': 'Bearer ${currentUser.sessionToken}'},
       );
       if (response.statusCode == 200) {
         return FormDataResponse.fromJson(jsonDecode(response.body));
@@ -111,9 +118,12 @@ class ApiScheduleRepository implements ScheduleRepository {
   @override
   Future<bool> createSchedule(CreateScheduleRequest request) async {
     try {
-      final response = await http.post(
+      final response = await HttpClient.post(
         Uri.parse('$_baseUrl/schedules?user_id=${currentUser.id}'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${currentUser.sessionToken}'
+        },
         body: jsonEncode(request.toJson()),
       );
       
@@ -133,8 +143,9 @@ class ApiScheduleRepository implements ScheduleRepository {
   @override
   Future<bool> deleteSchedule(String scheduleId) async {
     try {
-      final response = await http.delete(
+      final response = await HttpClient.delete(
         Uri.parse('$_baseUrl/schedules/$scheduleId?user_id=${currentUser.id}'),
+        headers: {'Authorization': 'Bearer ${currentUser.sessionToken}'},
       );
       
       // Thành công khi HTTP code là 200 hoặc 204 (No Content)

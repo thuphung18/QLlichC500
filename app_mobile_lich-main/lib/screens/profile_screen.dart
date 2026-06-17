@@ -282,7 +282,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => ChangePasswordScreen(userId: widget.profile.id),
+                      builder: (context) => ChangePasswordScreen(
+                        userId: widget.profile.id,
+                        sessionToken: widget.profile.sessionToken ?? '',
+                      ),
                     ),
                   );
                 },

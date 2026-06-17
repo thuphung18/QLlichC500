@@ -23,7 +23,7 @@ class AdminDashboardScreen extends StatefulWidget {
 class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final ApiUserRepository _userRepo = ApiUserRepository();
+  late final ApiUserRepository _userRepo;
 
   List<UserDetail> _users = [];
   List<Map<String, String>> _departments = [];
@@ -33,6 +33,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   @override
   void initState() {
     super.initState();
+    _userRepo = ApiUserRepository(sessionToken: widget.adminProfile.sessionToken ?? '');
     _tabController = TabController(length: 2, vsync: this);
     _loadUsers();
     _loadDepartments();

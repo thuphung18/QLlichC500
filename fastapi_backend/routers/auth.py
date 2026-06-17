@@ -13,6 +13,7 @@ from schemas import (
     ResetPasswordRequest, ResetPasswordResponse,
     FcmTokenRequest
 )
+from dependencies import verify_session_token
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -45,14 +46,22 @@ def login(request: LoginRequest, db: pyodbc.Connection = Depends(get_db)):
             
         user_dict = row_to_dict(cursor, row)
         
-        # Mapping cÃ¡c trÆ°á»ng cho phÃ¹ há»£p vá»›i UserProfile schema
-        # LÆ°u Ã½: Náº¿u SP khÃ´ng tráº£ vá» avatarUrl, ta gÃ¡n None
+        # Mapping cÃ¡c trÆ°á» ng cho phÃ¹ há»£p vá»›i UserProfile schema
+        # LÆ°u Ã½: Náº¿u SP khÃ´ng tráº£ vá»  avatarUrl, ta gÃ¡n None
         if 'avatarUrl' not in user_dict:
             user_dict['avatarUrl'] = None
+            
+        # Táº¡o session_token
+        session_token = str(uuid.uuid4())
+        cursor.execute("UPDATE dbo.users SET session_token = ? WHERE id = ?", (session_token, user_dict['id']))
+        db.commit()
+        
+        user_dict['sessionToken'] = session_token
             
         user_profile = UserProfile(**user_dict)
         return LoginResponse(user=user_profile)
     except pyodbc.Error as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
     finally:
         cursor.close()
@@ -221,7 +230,7 @@ def reset_password(request: ResetPasswordRequest, db: pyodbc.Connection = Depend
         cursor.close()
 
 @router.post("/fcm-token", response_model=dict)
-def update_fcm_token(req: FcmTokenRequest, db: pyodbc.Connection = Depends(get_db)):
+def update_fcm_token(req: FcmTokenRequest, db: pyodbc.Connection = Depends(get_db), current_user_id: str = Depends(verify_session_token)):
     """
     Cáº­p nháº­t FCM Token cho user
     """

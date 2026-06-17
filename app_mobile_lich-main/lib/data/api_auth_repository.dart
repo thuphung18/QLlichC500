@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'http_client.dart';
 
 import '../models/user_profile.dart';
 import '../repositories/auth_repository.dart';
@@ -21,7 +21,7 @@ class ApiAuthRepository implements AuthRepository {
     required String password,
   }) async {
     try {
-      final response = await http.post(
+      final response = await HttpClient.post(
         Uri.parse('$_baseUrl/auth/login'),
         headers: {'Content-Type': 'application/json'},
         // Mã hóa Map thành chuỗi JSON
@@ -50,7 +50,7 @@ class ApiAuthRepository implements AuthRepository {
     required String contact, // Email hoặc số điện thoại
   }) async {
     try {
-      final response = await http.post(
+      final response = await HttpClient.post(
         Uri.parse('$_baseUrl/auth/forgot-password/send'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -81,7 +81,7 @@ class ApiAuthRepository implements AuthRepository {
     required String code, // Mã OTP 6 số
   }) async {
     try {
-      final response = await http.post(
+      final response = await HttpClient.post(
         Uri.parse('$_baseUrl/auth/forgot-password/verify'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -112,7 +112,7 @@ class ApiAuthRepository implements AuthRepository {
     required String newPassword,
   }) async {
     try {
-      final response = await http.post(
+      final response = await HttpClient.post(
         Uri.parse('$_baseUrl/auth/forgot-password/reset'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({

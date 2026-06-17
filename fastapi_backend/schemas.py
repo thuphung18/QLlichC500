@@ -17,6 +17,7 @@ class UserProfile(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     avatarUrl: Optional[str] = None
+    sessionToken: Optional[str] = None
 
 class LoginResponse(BaseModel):
     user: UserProfile

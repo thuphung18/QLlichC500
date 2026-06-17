@@ -13,4 +13,5 @@ build/
 .flutter-plugins
 .flutter-plugins-dependencies
 *.iml
+*.docx
 serviceAccountKey.json

@@ -18,11 +18,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _emailController;
   late TextEditingController _phoneController;
   bool _isLoading = false;
-  final ApiUserRepository _userRepository = ApiUserRepository();
+  late final ApiUserRepository _userRepository;
 
   @override
   void initState() {
     super.initState();
+    _userRepository = ApiUserRepository(sessionToken: widget.profile.sessionToken ?? '');
     _nameController = TextEditingController(text: widget.profile.fullName);
     _emailController = TextEditingController(text: widget.profile.email);
     _phoneController = TextEditingController(text: widget.profile.phone);

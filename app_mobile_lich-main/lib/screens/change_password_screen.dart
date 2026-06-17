@@ -4,8 +4,9 @@ import '../data/api_user_repository.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
   final String userId;
+  final String sessionToken;
   
-  const ChangePasswordScreen({super.key, required this.userId});
+  const ChangePasswordScreen({super.key, required this.userId, required this.sessionToken});
 
   @override
   State<ChangePasswordScreen> createState() => _ChangePasswordScreenState();
@@ -22,7 +23,13 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   bool _obscureNew = true;
   bool _obscureConfirm = true;
   
-  final ApiUserRepository _userRepository = ApiUserRepository();
+  late final ApiUserRepository _userRepository;
+
+  @override
+  void initState() {
+    super.initState();
+    _userRepository = ApiUserRepository(sessionToken: widget.sessionToken);
+  }
 
   @override
   void dispose() {

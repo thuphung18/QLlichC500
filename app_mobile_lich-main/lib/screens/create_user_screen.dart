@@ -94,7 +94,7 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
     );
 
     // Gửi yêu cầu qua API, truyền adminId để backend kiểm tra quyền
-    final userRepo = ApiUserRepository();
+    final userRepo = ApiUserRepository(sessionToken: widget.currentUser.sessionToken ?? '');
     final success = await userRepo.createUser(request, widget.currentUser.id);
 
     // Dừng hiển thị vòng tròn loading

@@ -9,6 +9,7 @@ import 'theme/theme_provider.dart';
 import 'theme/app_colors.dart';
 
 final ThemeProvider globalThemeProvider = ThemeProvider();
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -46,6 +47,7 @@ class ScheduleApp extends StatelessWidget {
       listenable: globalThemeProvider,
       builder: (context, _) {
         return MaterialApp(
+          navigatorKey: navigatorKey,
           // Ẩn chữ DEBUG ở góc phải màn hình.
           debugShowCheckedModeBanner: false,
 

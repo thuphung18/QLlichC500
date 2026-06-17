@@ -1,10 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # Import các router
 from routers import auth, schedules, users, departments
 from scheduler import start_scheduler
+from dependencies import verify_session_token
 
 app = FastAPI(
     title="QL Lịch Tuần API",
@@ -23,9 +24,9 @@ app.add_middleware(
 
 # Đăng ký các Router
 app.include_router(auth.router)
-app.include_router(schedules.router)
-app.include_router(users.router)
-app.include_router(departments.router)
+app.include_router(schedules.router, dependencies=[Depends(verify_session_token)])
+app.include_router(users.router, dependencies=[Depends(verify_session_token)])
+app.include_router(departments.router, dependencies=[Depends(verify_session_token)])
 
 @app.on_event("startup")
 def startup_event():

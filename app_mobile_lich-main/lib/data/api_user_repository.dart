@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'http_client.dart';
 
 import 'api_config.dart';
 import '../models/create_user_request.dart';
@@ -89,14 +89,18 @@ class DepartmentRequest {
 /// [ApiUserRepository] chịu trách nhiệm quản lý các API liên quan đến thao tác người dùng.
 class ApiUserRepository {
   final String _baseUrl = ApiConfig.baseUrl;
+  final String sessionToken;
+
+  ApiUserRepository({required this.sessionToken});
 
   // ==================== ADMIN: Quản lý tài khoản ====================
 
   /// Admin lấy danh sách tất cả người dùng.
   Future<List<UserDetail>> getAllUsers(String adminId) async {
     try {
-      final response = await http.get(
+      final response = await HttpClient.get(
         Uri.parse('$_baseUrl/users/?admin_id=$adminId'),
+        headers: {'Authorization': 'Bearer $sessionToken'},
       );
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(utf8.decode(response.bodyBytes));
@@ -113,9 +117,12 @@ class ApiUserRepository {
   /// Admin tạo tài khoản mới.
   Future<bool> createUser(CreateUserRequest request, String adminId) async {
     try {
-      final response = await http.post(
+      final response = await HttpClient.post(
         Uri.parse('$_baseUrl/users/?admin_id=$adminId'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $sessionToken'
+        },
         body: jsonEncode(request.toJson()),
       );
       if (response.statusCode == 200) return true;
@@ -134,9 +141,12 @@ class ApiUserRepository {
     String adminId,
   ) async {
     try {
-      final response = await http.put(
+      final response = await HttpClient.put(
         Uri.parse('$_baseUrl/users/$targetUserId/admin?admin_id=$adminId'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $sessionToken'
+        },
         body: jsonEncode(request.toJson()),
       );
       if (response.statusCode == 200) return true;
@@ -151,8 +161,9 @@ class ApiUserRepository {
   /// Admin xóa tài khoản người dùng.
   Future<bool> deleteUser(String targetUserId, String adminId) async {
     try {
-      final response = await http.delete(
+      final response = await HttpClient.delete(
         Uri.parse('$_baseUrl/users/$targetUserId?admin_id=$adminId'),
+        headers: {'Authorization': 'Bearer $sessionToken'},
       );
       if (response.statusCode == 200) return true;
       print('Delete user failed: ${response.statusCode} - ${response.body}');
@@ -168,8 +179,9 @@ class ApiUserRepository {
   /// Admin lấy danh sách phòng ban.
   Future<List<Map<String, String>>> getDepartments(String adminId) async {
     try {
-      final response = await http.get(
+      final response = await HttpClient.get(
         Uri.parse('$_baseUrl/departments?user_id=$adminId'),
+        headers: {'Authorization': 'Bearer $sessionToken'},
       );
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(utf8.decode(response.bodyBytes));
@@ -188,8 +200,9 @@ class ApiUserRepository {
   /// Admin tạo phòng ban mới.
   Future<bool> createDepartment(String name, String adminId) async {
     try {
-      final response = await http.post(
+      final response = await HttpClient.post(
         Uri.parse('$_baseUrl/departments?name=${Uri.encodeComponent(name)}&user_id=$adminId'),
+        headers: {'Authorization': 'Bearer $sessionToken'},
       );
       return response.statusCode == 200;
     } catch (e) {
@@ -201,8 +214,9 @@ class ApiUserRepository {
   /// Admin đổi tên phòng ban.
   Future<bool> updateDepartment(String deptId, String name, String adminId) async {
     try {
-      final response = await http.put(
+      final response = await HttpClient.put(
         Uri.parse('$_baseUrl/departments/$deptId?name=${Uri.encodeComponent(name)}&user_id=$adminId'),
+        headers: {'Authorization': 'Bearer $sessionToken'},
       );
       return response.statusCode == 200;
     } catch (e) {
@@ -214,8 +228,9 @@ class ApiUserRepository {
   /// Admin xóa phòng ban.
   Future<String?> deleteDepartment(String deptId, String adminId) async {
     try {
-      final response = await http.delete(
+      final response = await HttpClient.delete(
         Uri.parse('$_baseUrl/departments/$deptId?user_id=$adminId'),
+        headers: {'Authorization': 'Bearer $sessionToken'},
       );
       if (response.statusCode == 200) return null; // Thành công
       final body = jsonDecode(response.body);
@@ -230,9 +245,12 @@ class ApiUserRepository {
   /// Người dùng tự cập nhật thông tin hồ sơ cá nhân.
   Future<UserProfile?> updateProfile(String userId, UpdateProfileRequest request) async {
     try {
-      final response = await http.put(
+      final response = await HttpClient.put(
         Uri.parse('$_baseUrl/users/$userId/profile'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $sessionToken'
+        },
         body: jsonEncode(request.toJson()),
       );
       if (response.statusCode == 200) {
@@ -249,9 +267,12 @@ class ApiUserRepository {
   /// Người dùng tự đổi mật khẩu.
   Future<bool> updatePassword(String userId, UpdatePasswordRequest request) async {
     try {
-      final response = await http.put(
+      final response = await HttpClient.put(
         Uri.parse('$_baseUrl/users/$userId/password'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $sessionToken'
+        },
         body: jsonEncode(request.toJson()),
       );
       if (response.statusCode == 200) return true;
