@@ -240,12 +240,14 @@ def create_schedule(req: CreateScheduleRequest, user_id: str = "u001", db: pyodb
         days_str = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"]
         date_label = f"{days_str[dt.weekday()]}, {dt.strftime('%d/%m')}"
 
+        dept_id = req.departmentId if req.departmentId and req.departmentId.strip() else None
+
         cursor.execute('''
             INSERT INTO dbo.schedules
             (id, title, teacher, room, schedule_date, date_label, day_index, start_time, end_time, session, note, unit, department_id, category, created_by_user_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (new_id, req.title, req.teacher, req.room, req.scheduleDate, date_label, day_index,
-              req.startTime, req.endTime, session, req.note, req.unit, req.departmentId, req.category, user_id))
+              req.startTime, req.endTime, session, req.note, req.unit, dept_id, req.category, user_id))
 
         for p_uid in req.participantUserIds:
             cursor.execute("SELECT full_name FROM dbo.users WHERE id = ?", (p_uid,))
@@ -308,5 +310,110 @@ def delete_schedule(schedule_id: str, user_id: str, db: pyodbc.Connection = Depe
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+
+import os
+import shutil
+from fastapi import UploadFile, File
+
+@router.post("/import")
+async def import_schedules(file: UploadFile = File(...), db: pyodbc.Connection = Depends(get_db)):
+    """
+    Nhận file (PDF), trích xuất text, và dùng Gemini AI để tạo danh sách lịch (JSON).
+    Chỉ trả về JSON, chưa lưu vào DB.
+    """
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Hiện tại hệ thống chỉ hỗ trợ import từ file PDF.")
+        
+    try:
+        # Lưu file tạm
+        temp_file_path = f"temp_{uuid.uuid4()}.pdf"
+        with open(temp_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        # Lấy danh sách phòng ban từ DB để AI map
+        cursor = db.cursor()
+        cursor.execute("SELECT id, name FROM dbo.departments")
+        departments = [{"id": str(row[0]), "name": row[1]} for row in cursor.fetchall()]
+        cursor.close()
+        
+        # Gọi Gemini AI xử lý song song bất đồng bộ
+        from services.gemini_service import extract_schedules_from_pdf_async
+        schedules_json = await extract_schedules_from_pdf_async(temp_file_path, departments)
+        
+        # Xóa file tạm sau khi hoàn tất xử lý
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+            
+        if not schedules_json:
+            raise HTTPException(status_code=400, detail="Không thể trích xuất lịch công tác từ file PDF hoặc file trống.")
+            
+        return schedules_json
+    except Exception as e:
+        print(f"Import Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/bulk", response_model=dict)
+def bulk_create_schedules(request: List[CreateScheduleRequest], user_id: str = "u001", db: pyodbc.Connection = Depends(get_db)):
+    """
+    Lưu hàng loạt các lịch sau khi Admin đã xem và xác nhận.
+    """
+    user_info = _get_user_info(user_id, db)
+    if not _can_create_schedule(user_info["role"]):
+        raise HTTPException(status_code=403, detail="Không có quyền thêm lịch")
+        
+    cursor = db.cursor()
+    success_count = 0
+    try:
+        for sched in request:
+            # Check quyền tạo lịch ToanTruong
+            cat = sched.category
+            if cat == "ToanTruong" and not _is_admin(user_info["role"]):
+                continue # Skip những lịch không đủ quyền
+                
+            new_id = str(uuid.uuid4())
+            
+            from datetime import datetime
+            dt = datetime.strptime(sched.scheduleDate, "%Y-%m-%d")
+            day_index = dt.weekday() + 2
+            if day_index == 9:
+                day_index = 8
+
+            h = int(sched.startTime.split(":")[0])
+            if h < 12:
+                session = "morning"
+            elif h < 18:
+                session = "afternoon"
+            else:
+                session = "evening"
+
+            days_str = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"]
+            date_label = f"{days_str[dt.weekday()]}, {dt.strftime('%d/%m')}"
+            
+            # Xử lý trường hợp AI trả về departmentId là chuỗi rỗng
+            dept_id = sched.departmentId if sched.departmentId and sched.departmentId.strip() else None
+
+            cursor.execute("""
+                INSERT INTO dbo.schedules (id, title, teacher, room, schedule_date, date_label, day_index, start_time, end_time, session, note, unit, department_id, category, created_by_user_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                new_id, sched.title, sched.teacher, sched.room, sched.scheduleDate, date_label, day_index, sched.startTime, sched.endTime, session, sched.note, sched.unit, dept_id, cat, user_id
+            ))
+            
+            if sched.participantUserIds:
+                for p_id in sched.participantUserIds:
+                    cursor.execute("""
+                        INSERT INTO dbo.schedule_participants (schedule_id, user_id)
+                        VALUES (?, ?)
+                    """, (new_id, p_id))
+            success_count += 1
+            
+        db.commit()
+        return {"success": True, "message": f"Đã thêm thành công {success_count} lịch."}
+    except Exception as e:
+        db.rollback()
+        print(f"Bulk insert error: {e}")
+        raise HTTPException(status_code=500, detail="Có lỗi xảy ra khi lưu lịch.")
     finally:
         cursor.close()

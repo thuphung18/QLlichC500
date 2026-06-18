@@ -9,7 +9,11 @@ import '../widgets/empty_state.dart';
 import '../widgets/schedule_summary_card.dart';
 import '../widgets/session_section.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_colors.dart';
 import 'create_schedule_screen.dart';
+import 'dart:async';
+import '../utils/event_bus.dart';
+import '../utils/app_state.dart';
 
 // DepartmentScheduleScreen là màn hình "Lịch khoa".
 // Không fix cứng Khoa Công nghệ thông tin nữa.
@@ -31,19 +35,42 @@ class DepartmentScheduleScreen extends StatefulWidget {
 }
 
 class _DepartmentScheduleScreenState extends State<DepartmentScheduleScreen> {
-  int _selectedDayIndex = 2;
   Future<List<ScheduleItem>>? _schedulesFuture;
+  late StreamSubscription<String> _eventSubscription;
 
   @override
   void initState() {
     super.initState();
     _loadSchedules();
+    AppState().selectedDayNotifier.addListener(_onDayChanged);
+    _eventSubscription = EventBus().onScheduleDeleted.listen((_) {
+      if (mounted) {
+        setState(() {
+          _loadSchedules();
+        });
+      }
+    });
+  }
+
+  void _onDayChanged() {
+    if (mounted) {
+      setState(() {
+        _loadSchedules();
+      });
+    }
   }
 
   void _loadSchedules() {
     _schedulesFuture = widget.repository.getDepartmentSchedules().then(
-          (schedules) => schedules.where((item) => item.dayIndex == _selectedDayIndex).toList(),
+          (schedules) => schedules.where((item) => item.dayIndex == AppState().selectedDayNotifier.value).toList(),
     );
+  }
+
+  @override
+  void dispose() {
+    AppState().selectedDayNotifier.removeListener(_onDayChanged);
+    _eventSubscription.cancel();
+    super.dispose();
   }
 
   Future<void> _deleteSchedule(ScheduleItem item) async {
@@ -87,91 +114,91 @@ class _DepartmentScheduleScreenState extends State<DepartmentScheduleScreen> {
         backgroundColor: AppColors.success,
         child: const Icon(Icons.add, color: Colors.white),
       ) : null,
-      body: FutureBuilder<List<ScheduleItem>>(
-        future: _schedulesFuture,
-        builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        children: [
+          AppHeader(
+            title: 'LỊCH CỦA KHOA',
+            subtitle: 'Lịch chung của ${widget.departmentName}',
+            icon: Icons.business,
+            accentColor: AppColors.success,
+          ),
+          const SizedBox(height: 16),
+          DaySelector(
+            selectedDayIndex: AppState().selectedDayNotifier.value,
+            onChanged: (value) {
+              if (AppState().selectedDayNotifier.value != value) {
+                AppState().selectedDayNotifier.value = value;
+              }
+            },
+          ),
+          const SizedBox(height: 18),
+          FutureBuilder<List<ScheduleItem>>(
+            future: _schedulesFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 50),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
 
-        final schedules = snapshot.data ?? [];
+              final schedules = snapshot.data ?? [];
+              final morningItems = _filterBySession(schedules, 'morning');
+              final afternoonItems = _filterBySession(schedules, 'afternoon');
+              final eveningItems = _filterBySession(schedules, 'evening');
 
-        final morningItems = _filterBySession(schedules, 'morning');
-        final afternoonItems = _filterBySession(schedules, 'afternoon');
-        final eveningItems = _filterBySession(schedules, 'evening');
-
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-          children: [
-            AppHeader(
-              title: 'LỊCH CỦA KHOA',
-              subtitle: 'Lịch chung của ${widget.departmentName}',
-              icon: Icons.business,
-              accentColor: AppColors.success,
-            ),
-
-            const SizedBox(height: 16),
-
-            DaySelector(
-              selectedDayIndex: _selectedDayIndex,
-              onChanged: (value) {
-                setState(() {
-                  _selectedDayIndex = value;
-                  _loadSchedules();
-                });
-              },
-            ),
-
-            const SizedBox(height: 18),
-
-            ScheduleSummaryCard(
-              totalCount: schedules.length,
-              morningCount: morningItems.length,
-              afternoonCount: afternoonItems.length,
-              eveningCount: eveningItems.length,
-              accentColor: AppColors.success,
-              title: 'Tổng quan lịch khoa',
-              subtitle: 'Thống kê lịch chung của khoa theo ngày',
-            ),
-
-            const SizedBox(height: 18),
-
-            if (schedules.isEmpty)
-              const EmptyState(
-                icon: Icons.business,
-                title: 'Chưa có lịch của khoa',
-                message: 'Ngày này khoa chưa có lịch công tác chung.',
-              )
-            else ...[
-              SessionSection(
-                title: 'SÁNG',
-                icon: Icons.wb_sunny,
-                items: morningItems,
-                accentColor: AppColors.success,
-                isAdmin: canManage,
-                onDelete: _deleteSchedule,
-              ),
-              SessionSection(
-                title: 'CHIỀU',
-                icon: Icons.brightness_5,
-                items: afternoonItems,
-                accentColor: AppColors.warning,
-                isAdmin: canManage,
-                onDelete: _deleteSchedule,
-              ),
-              SessionSection(
-                title: 'TỐI',
-                icon: Icons.nights_stay,
-                items: eveningItems,
-                accentColor: const Color(0xFF7C3AED),
-                isAdmin: canManage,
-                onDelete: _deleteSchedule,
-              ),
-            ],
-          ],
-        );
-      },
-    ),
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ScheduleSummaryCard(
+                    totalCount: schedules.length,
+                    morningCount: morningItems.length,
+                    afternoonCount: afternoonItems.length,
+                    eveningCount: eveningItems.length,
+                    accentColor: AppColors.success,
+                    title: 'Tổng quan lịch khoa',
+                    subtitle: 'Thống kê lịch chung của khoa theo ngày',
+                  ),
+                  const SizedBox(height: 18),
+                  if (schedules.isEmpty)
+                    const EmptyState(
+                      icon: Icons.business,
+                      title: 'Chưa có lịch của khoa',
+                      message: 'Ngày này khoa chưa có lịch công tác chung.',
+                    )
+                  else ...[
+                    SessionSection(
+                      title: 'SÁNG',
+                      icon: Icons.wb_sunny,
+                      items: morningItems,
+                      accentColor: AppColors.success,
+                      isAdmin: canManage,
+                      onDelete: _deleteSchedule,
+                    ),
+                    SessionSection(
+                      title: 'CHIỀU',
+                      icon: Icons.brightness_5,
+                      items: afternoonItems,
+                      accentColor: AppColors.warning,
+                      isAdmin: canManage,
+                      onDelete: _deleteSchedule,
+                    ),
+                    SessionSection(
+                      title: 'TỐI',
+                      icon: Icons.nights_stay,
+                      items: eveningItems,
+                      accentColor: const Color(0xFF7C3AED),
+                      isAdmin: canManage,
+                      onDelete: _deleteSchedule,
+                    ),
+                  ],
+                ],
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 

@@ -1,11 +1,15 @@
 import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'token_storage.dart';
 import 'http_client.dart';
 
 import '../models/user_profile.dart';
 import '../models/schedule_item.dart';
 import '../models/create_schedule_request.dart';
 import '../models/form_data_response.dart';
+import '../models/form_data_response.dart';
 import '../repositories/schedule_repository.dart';
+import '../utils/event_bus.dart';
 import 'api_config.dart';
 
 /// Lớp [ApiScheduleRepository] đóng vai trò lấy/gửi dữ liệu lịch trình từ/đến Backend API.
@@ -129,6 +133,7 @@ class ApiScheduleRepository implements ScheduleRepository {
       
       // Thành công khi HTTP code là 200 hoặc 201 (Created)
       if (response.statusCode == 200 || response.statusCode == 201) {
+        EventBus().fireScheduleDeleted('new'); // Trigger a reload
         return true;
       }
       print('Create schedule failed: ${response.body}');
@@ -150,12 +155,76 @@ class ApiScheduleRepository implements ScheduleRepository {
       
       // Thành công khi HTTP code là 200 hoặc 204 (No Content)
       if (response.statusCode == 200 || response.statusCode == 204) {
+        EventBus().fireScheduleDeleted(scheduleId);
         return true;
       }
       print('Delete schedule failed: ${response.body}');
       return false;
     } catch (e) {
       print('Delete schedule error: $e');
+      return false;
+    }
+  }
+  /// Tải file mềm (PDF) lên để AI đọc và trả về danh sách lịch preview
+  Future<List<CreateScheduleRequest>> uploadScheduleFile(String filePath) async {
+    try {
+      var request = http.MultipartRequest('POST', Uri.parse('$_baseUrl/schedules/import'));
+      request.files.add(await http.MultipartFile.fromPath('file', filePath));
+      
+      // HttpClient.dart của ta chưa có wrapper cho Multipart, nên phải tự lấy token
+      final token = await TokenStorage.getAccessToken();
+      if (token != null) {
+        request.headers['Authorization'] = 'Bearer $token';
+      }
+
+      final response = await request.send();
+      if (response.statusCode == 200) {
+        final responseData = await response.stream.bytesToString();
+        final List<dynamic> data = jsonDecode(responseData);
+        return data.map((json) => CreateScheduleRequest.fromJson(json)).toList();
+      }
+      return [];
+    } catch (e) {
+      print('Upload schedule error: $e');
+      return [];
+    }
+  }
+
+  /// Tải file bằng bytes (Dành cho nền tảng Web)
+  Future<List<CreateScheduleRequest>> uploadScheduleFileBytes(List<int> bytes, String fileName) async {
+    try {
+      var request = http.MultipartRequest('POST', Uri.parse('$_baseUrl/schedules/import'));
+      request.files.add(http.MultipartFile.fromBytes('file', bytes, filename: fileName));
+      
+      final token = await TokenStorage.getAccessToken();
+      if (token != null) {
+        request.headers['Authorization'] = 'Bearer $token';
+      }
+
+      final response = await request.send();
+      if (response.statusCode == 200) {
+        final responseData = await response.stream.bytesToString();
+        final List<dynamic> data = jsonDecode(responseData);
+        return data.map((json) => CreateScheduleRequest.fromJson(json)).toList();
+      }
+      return [];
+    } catch (e) {
+      print('Upload schedule error bytes: $e');
+      return [];
+    }
+  }
+
+  /// Bulk insert schedules
+  Future<bool> bulkCreateSchedules(List<CreateScheduleRequest> schedules) async {
+    try {
+      final response = await HttpClient.post(
+        Uri.parse('$_baseUrl/schedules/bulk?user_id=${currentUser.id}'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(schedules.map((s) => s.toJson()).toList()),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Bulk create schedule error: $e');
       return false;
     }
   }

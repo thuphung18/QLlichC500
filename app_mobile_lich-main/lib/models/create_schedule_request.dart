@@ -66,4 +66,20 @@ class CreateScheduleRequest {
       'participantUserIds': participantUserIds,
     };
   }
+
+  factory CreateScheduleRequest.fromJson(Map<String, dynamic> json) {
+    return CreateScheduleRequest(
+      title: json['title'] ?? '',
+      teacher: json['teacher'] ?? '',
+      room: json['room'] ?? '',
+      scheduleDate: json['scheduleDate'] ?? '',
+      startTime: json['startTime'] ?? '',
+      endTime: json['endTime'] ?? '',
+      note: json['note'],
+      unit: json['unit'] ?? '',
+      departmentId: json['departmentId'] ?? '',
+      category: json['category'] ?? '',
+      participantUserIds: json['participantUserIds'] != null ? List<String>.from(json['participantUserIds']) : [],
+    );
+  }
 }

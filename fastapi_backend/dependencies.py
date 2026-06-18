@@ -1,10 +1,9 @@
 from fastapi import Depends, HTTPException, Header, status
-import pyodbc
-from database import get_db
+from core.security import SECRET_KEY, ALGORITHM
+from jose import jwt, JWTError
 
 def verify_session_token(
-    authorization: str = Header(None),
-    db: pyodbc.Connection = Depends(get_db)
+    authorization: str = Header(None)
 ):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
@@ -15,17 +14,18 @@ def verify_session_token(
     
     token = authorization.split(" ")[1]
     
-    cursor = db.cursor()
     try:
-        cursor.execute("SELECT id FROM dbo.users WHERE session_token = ? AND is_active = 1", (token,))
-        row = cursor.fetchone()
-        if not row:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Phiên đăng nhập đã hết hạn hoặc bạn đã đăng nhập ở thiết bị khác",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        # return user_id if needed
-        return row[0]
-    finally:
-        cursor.close()
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token không hợp lệ")
+        # Ensure it's not a refresh token being used as access token
+        if payload.get("type") == "refresh":
+             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Không thể dùng Refresh Token ở đây")
+        return user_id
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Phiên đăng nhập đã hết hạn hoặc token không hợp lệ",
+            headers={"WWW-Authenticate": "Bearer"},
+        )

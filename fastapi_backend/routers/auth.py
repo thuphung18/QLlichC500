@@ -11,9 +11,11 @@ from schemas import (
     SendResetCodeRequest, SendResetCodeResponse,
     VerifyResetCodeRequest, VerifyResetCodeResponse,
     ResetPasswordRequest, ResetPasswordResponse,
-    FcmTokenRequest
+    FcmTokenRequest, RefreshTokenRequest, TokenResponse
 )
 from dependencies import verify_session_token
+from core.security import create_access_token, create_refresh_token, SECRET_KEY, ALGORITHM
+from jose import jwt, JWTError
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -51,15 +53,21 @@ def login(request: LoginRequest, db: pyodbc.Connection = Depends(get_db)):
         if 'avatarUrl' not in user_dict:
             user_dict['avatarUrl'] = None
             
-        # Táº¡o session_token
-        session_token = str(uuid.uuid4())
-        cursor.execute("UPDATE dbo.users SET session_token = ? WHERE id = ?", (session_token, user_dict['id']))
-        db.commit()
+        # Táº¡o jwt tokens
+        user_id = str(user_dict['id'])
+        access_token = create_access_token(data={"sub": user_id, "role": user_dict.get('role', '')})
+        refresh_token = create_refresh_token(data={"sub": user_id})
         
-        user_dict['sessionToken'] = session_token
+        # Save refresh_token into db (single session)
+        cursor.execute("UPDATE dbo.users SET refresh_token = ? WHERE id = ?", (refresh_token, user_id))
+        db.commit()
             
         user_profile = UserProfile(**user_dict)
-        return LoginResponse(user=user_profile)
+        return LoginResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user=user_profile
+        )
     except pyodbc.Error as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
@@ -245,3 +253,69 @@ def update_fcm_token(req: FcmTokenRequest, db: pyodbc.Connection = Depends(get_d
     finally:
         cursor.close()
 
+@router.post("/refresh-token", response_model=LoginResponse)
+def refresh_token(request: RefreshTokenRequest, db: pyodbc.Connection = Depends(get_db)):
+    """
+    Sử dụng Refresh Token để lấy Access Token và Refresh Token mới, kèm theo thông tin UserProfile.
+    Đảm bảo tính năng Single Session: Refresh token truyền lên phải trùng với trong DB.
+    """
+    try:
+        payload = jwt.decode(request.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None or payload.get("type") != "refresh":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token không hợp lệ")
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Phiên đăng nhập đã hết hạn")
+        
+    cursor = db.cursor()
+    try:
+        cursor.execute("""
+            SELECT 
+                u.id, u.username, u.full_name, u.role, u.unit, u.department_id,
+                d.name as departmentName, u.email, u.phone, u.avatar_url, u.refresh_token, u.is_active
+            FROM dbo.users u
+            LEFT JOIN dbo.departments d ON u.department_id = d.id
+            WHERE u.id = ?
+        """, (user_id,))
+        row = cursor.fetchone()
+        
+        if not row or row.is_active == 0:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Tài khoản không tồn tại hoặc đã bị khóa")
+            
+        # Single Session Check
+        db_refresh_token = row.refresh_token
+        if db_refresh_token != request.refresh_token:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bạn đã đăng nhập ở thiết bị khác")
+            
+        # Generate new tokens
+        role = row.role
+        new_access_token = create_access_token(data={"sub": user_id, "role": role})
+        new_refresh_token = create_refresh_token(data={"sub": user_id})
+        
+        # Save new refresh token
+        cursor.execute("UPDATE dbo.users SET refresh_token = ? WHERE id = ?", (new_refresh_token, user_id))
+        db.commit()
+        
+        user_profile = UserProfile(
+            id=str(row.id),
+            username=row.username,
+            fullName=row.full_name,
+            role=row.role,
+            unit=row.unit,
+            departmentId=str(row.department_id) if row.department_id else "",
+            departmentName=row.departmentName if row.departmentName else "",
+            email=row.email,
+            phone=row.phone,
+            avatarUrl=row.avatar_url
+        )
+        
+        return LoginResponse(
+            access_token=new_access_token,
+            refresh_token=new_refresh_token,
+            user=user_profile
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()

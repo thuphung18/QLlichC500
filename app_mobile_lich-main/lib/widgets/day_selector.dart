@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 // DaySelector là thanh chọn ngày trong tuần.
 // Người dùng bấm T2, T3, T4... để đổi lịch theo ngày.
-class DaySelector extends StatelessWidget {
+class DaySelector extends StatefulWidget {
   final int selectedDayIndex;
   final ValueChanged<int> onChanged;
 
@@ -11,6 +11,13 @@ class DaySelector extends StatelessWidget {
     required this.selectedDayIndex,
     required this.onChanged,
   });
+
+  @override
+  State<DaySelector> createState() => _DaySelectorState();
+}
+
+class _DaySelectorState extends State<DaySelector> {
+  late ScrollController _scrollController;
 
   // index dùng để lọc lịch:
   // 2 = thứ 2
@@ -28,20 +35,83 @@ class DaySelector extends StatelessWidget {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+    
+    // Đợi layout xong thì cuộn tới ngày đang chọn
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToSelectedDay(animate: false);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant DaySelector oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedDayIndex != widget.selectedDayIndex) {
+      _scrollToSelectedDay(animate: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToSelectedDay({bool animate = true}) {
+    if (!_scrollController.hasClients) return;
+
+    final index = _days.indexWhere((day) => day.index == widget.selectedDayIndex);
+    if (index == -1) return;
+
+    const itemWidth = 62.0;
+    const separatorWidth = 10.0;
+    const itemStride = itemWidth + separatorWidth;
+
+    // Tọa độ tâm của phần tử đang chọn
+    final itemCenter = (index * itemStride) + (itemWidth / 2);
+
+    // Kích thước chiều ngang của màn hình / khung hiển thị
+    final viewportWidth = _scrollController.position.viewportDimension;
+
+    // Tính toán để đưa phần tử vào giữa màn hình
+    var targetOffset = itemCenter - (viewportWidth / 2);
+
+    // Đảm bảo không cuộn quá giới hạn
+    if (targetOffset < 0) {
+      targetOffset = 0;
+    } else if (targetOffset > _scrollController.position.maxScrollExtent) {
+      targetOffset = _scrollController.position.maxScrollExtent;
+    }
+
+    if (animate) {
+      _scrollController.animateTo(
+        targetOffset,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+      );
+    } else {
+      _scrollController.jumpTo(targetOffset);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return SizedBox(
       height: 72,
       child: ListView.separated(
+        controller: _scrollController,
         scrollDirection: Axis.horizontal,
         itemCount: _days.length,
         separatorBuilder: (context, index) => const SizedBox(width: 10),
         itemBuilder: (context, index) {
           final day = _days[index];
-          final isSelected = selectedDayIndex == day.index;
+          final isSelected = widget.selectedDayIndex == day.index;
 
           return GestureDetector(
             onTap: () {
-              onChanged(day.index);
+              widget.onChanged(day.index);
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),

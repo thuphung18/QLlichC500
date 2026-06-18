@@ -53,7 +53,7 @@ class BiometricService {
         localizedReason: 'Vui lòng xác thực vân tay hoặc nhận diện khuôn mặt để tiếp tục',
         options: const AuthenticationOptions(
           stickyAuth: true,
-          biometricOnly: true,
+          biometricOnly: false, // Thay đổi thành false để hỗ trợ "Weak Biometrics" như Face ID trên Huawei/Samsung
         ),
       );
     } catch (e) {

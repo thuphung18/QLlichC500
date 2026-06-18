@@ -4,3 +4,5 @@ pyodbc
 pydantic
 firebase-admin
 apscheduler
+pymupdf4llm
+google-generativeai

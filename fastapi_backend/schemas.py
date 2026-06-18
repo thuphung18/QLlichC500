@@ -17,10 +17,21 @@ class UserProfile(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     avatarUrl: Optional[str] = None
-    sessionToken: Optional[str] = None
+    # Removed sessionToken as it is now managed via JWT access and refresh tokens
 
 class LoginResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
     user: UserProfile
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
 
 class SendResetCodeRequest(BaseModel):
     contact: str

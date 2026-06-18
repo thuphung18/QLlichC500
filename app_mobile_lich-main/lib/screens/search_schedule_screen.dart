@@ -8,6 +8,8 @@ import '../widgets/empty_state.dart';
 import '../widgets/schedule_card.dart';
 import '../theme/app_colors.dart';
 import 'schedule_detail_screen.dart';
+import 'dart:async';
+import '../utils/event_bus.dart';
 
 // SearchScheduleScreen là màn hình tìm kiếm lịch.
 // Người dùng có thể tìm theo tên lịch, phòng, đơn vị, người phụ trách...
@@ -28,11 +30,19 @@ class _SearchScheduleScreenState extends State<SearchScheduleScreen> {
 
   String _keyword = '';
   Future<List<ScheduleItem>>? _schedulesFuture;
+  late StreamSubscription<String> _eventSubscription;
 
   @override
   void initState() {
     super.initState();
     _loadSchedules();
+    _eventSubscription = EventBus().onScheduleDeleted.listen((_) {
+      if (mounted) {
+        setState(() {
+          _loadSchedules();
+        });
+      }
+    });
   }
 
   void _loadSchedules() {
@@ -41,6 +51,7 @@ class _SearchScheduleScreenState extends State<SearchScheduleScreen> {
 
   @override
   void dispose() {
+    _eventSubscription.cancel();
     _controller.dispose();
     super.dispose();
   }

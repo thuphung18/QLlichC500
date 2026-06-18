@@ -1,0 +1,296 @@
+import os
+import json
+import re
+import asyncio
+import pdfplumber
+import pymupdf4llm
+import google.generativeai as genai
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Cấu hình Gemini API
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+def parse_pdf_to_text(file_path: str) -> str:
+    """Đọc file PDF và trả về toàn bộ text (Legacy)."""
+    text = ""
+    try:
+        with pdfplumber.open(file_path) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+    except Exception as e:
+        print(f"Error reading PDF: {e}")
+    return text
+
+def extract_schedules_from_text(text: str, departments: list) -> list:
+    """
+    Gửi nội dung chữ lên Gemini để bóc tách thành danh sách JSON (Legacy/Đồng bộ).
+    """
+    dept_info = json.dumps(departments, ensure_ascii=False)
+    prompt = f"""
+Bạn là một trợ lý AI phân tích lịch công tác. Nhiệm vụ của bạn là đọc nội dung lịch (dạng text được trích xuất từ PDF) và trích xuất thành một mảng (array) các object JSON.
+
+DANH SÁCH PHÒNG BAN TRONG HỆ THỐNG:
+{dept_info}
+
+Quy tắc trích xuất cho mỗi lịch (trả về đúng định dạng JSON này, không có markdown formatting bên ngoài, CHỈ TRẢ VỀ JSON ARRAY TRỰC TIẾP `[...]`):
+[
+  {{
+    "title": "Nội dung công việc (chuỗi)",
+    "teacher": "Người chủ trì (tên người, ví dụ: Đ/c Vũ (PGĐ))",
+    "room": "Địa điểm (nếu có, không có để chuỗi rỗng)",
+    "scheduleDate": "Ngày diễn ra (định dạng YYYY-MM-DD). Hãy tự suy luận ngày dựa vào tiêu đề Lịch tuần hoặc các dấu hiệu ngày tháng.",
+    "startTime": "Giờ bắt đầu (định dạng HH:MM, nếu không có để 08:00)",
+    "endTime": "Giờ kết thúc (định dạng HH:MM, nếu không có để 11:30)",
+    "note": "Thành phần dự hoặc ghi chú (chuỗi)",
+    "unit": "Học viện ANND",
+    "departmentId": "Mã UUID của phòng ban liên quan nhất (Dựa vào chữ viết tắt trong Nội dung hoặc Thành phần dự. Ví dụ: QLĐT, HC, NV1... Đối chiếu với DANH SÁCH PHÒNG BAN ở trên để lấy ra id chính xác. Nếu không xác định được, hãy lấy id của phòng Quản lý đào tạo (QLĐT) hoặc Hành chính (HC) hoặc để chuỗi rỗng).",
+    "category": "ToanTruong",
+    "participantUserIds": []
+  }}
+]
+
+NỘI DUNG LỊCH CÔNG TÁC:
+{text}
+"""
+    try:
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        response = model.generate_content(prompt)
+        
+        result_text = response.text.strip()
+        if result_text.startswith("```json"):
+            result_text = result_text[7:]
+        if result_text.startswith("```"):
+            result_text = result_text[3:]
+        if result_text.endswith("```"):
+            result_text = result_text[:-3]
+            
+        result_text = result_text.strip()
+        parsed_json = json.loads(result_text)
+        if isinstance(parsed_json, list):
+            return parsed_json
+        return []
+    except Exception as e:
+        print(f"Gemini API Error: {e}")
+        return []
+
+# ==================== PHẦN MỚI: TỐI ƯU SONG SONG MARKDOWN ====================
+
+def find_matching_department_id(dept_keyword: str, departments: list) -> str:
+    """Ánh xạ tên phòng ban từ AI trích xuất sang mã UUID tương ứng trong cơ sở dữ liệu."""
+    if not dept_keyword or not isinstance(dept_keyword, str):
+        return ""
+    clean_kw = dept_keyword.strip().lower()
+    
+    # 1. Khớp trực tiếp (ví dụ: "QLĐT" nằm trong "Quản lý đào tạo (QLĐT)")
+    for dept in departments:
+        dept_name = dept["name"].lower()
+        if clean_kw in dept_name:
+            return dept["id"]
+            
+    # 2. Khớp ký tự viết tắt (ví dụ: "hc" -> "hành chính")
+    for dept in departments:
+        dept_name = dept["name"].lower()
+        words = dept_name.split()
+        initials = "".join([w[0] for w in words if w])
+        if clean_kw == initials:
+            return dept["id"]
+            
+    # 3. Khớp từ khóa cụ thể trong tên
+    for dept in departments:
+        dept_name = dept["name"].lower()
+        if clean_kw in dept_name or dept_name in clean_kw:
+            return dept["id"]
+            
+    # 4. Fallback về Quản lý đào tạo hoặc Hành chính
+    for dept in departments:
+        name_lower = dept["name"].lower()
+        if "đào tạo" in name_lower or "qldt" in name_lower:
+            return dept["id"]
+    for dept in departments:
+        name_lower = dept["name"].lower()
+        if "hành chính" in name_lower or "hc" in name_lower:
+            return dept["id"]
+            
+    return departments[0]["id"] if departments else ""
+
+def parse_pdf_to_markdown(file_path: str) -> str:
+    """Chuyển đổi file PDF sang Markdown giữ nguyên định dạng bảng biểu."""
+    try:
+        # Sử dụng pymupdf4llm để bóc tách Markdown Table cực tốt
+        return pymupdf4llm.to_markdown(file_path)
+    except Exception as e:
+        print(f"Error parsing PDF to Markdown: {e}")
+        # Fallback về pdfplumber nếu pymupdf4llm gặp lỗi
+        return parse_pdf_to_text(file_path)
+
+def split_markdown_by_days(md_text: str) -> dict:
+    """
+    Tách nội dung Markdown lịch theo các Thứ trong tuần.
+    Trả về dict dạng: {"Thứ Hai": "nội dung...", "Thứ Ba": "nội dung..."}
+    """
+    # Các mốc thứ thông dụng để cắt nhỏ
+    days = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật", 
+            "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"]
+    
+    # Tìm kiếm các tiêu đề ngày trong Markdown sử dụng Regex
+    pattern = r"(?i)(" + "|".join([re.escape(day) for day in days]) + r")"
+    matches = list(re.finditer(pattern, md_text))
+    
+    if not matches:
+        # Không tìm thấy mốc Thứ nào, giữ nguyên cả cục
+        return {"Toàn bộ lịch": md_text}
+    
+    chunks = {}
+    for i in range(len(matches)):
+        start = matches[i].start()
+        # Vị trí kết thúc là điểm bắt đầu của ngày tiếp theo, hoặc hết chuỗi
+        end = matches[i+1].start() if i + 1 < len(matches) else len(md_text)
+        day_name = matches[i].group(0)
+        chunks[day_name] = md_text[start:end]
+        
+    return chunks
+
+def split_markdown_into_groups(md_text: str) -> dict:
+    """
+    Tách lịch và gộp thành 3 nhóm để tránh giới hạn rate limit 5 RPM của Gemini API free tier.
+    - Nhóm 1: Thứ 2 và Thứ 3.
+    - Nhóm 2: Thứ 4 và Thứ 5.
+    - Nhóm 3: Thứ 6, Thứ 7, Chủ Nhật.
+    """
+    chunks = split_markdown_by_days(md_text)
+    
+    group_mapping = {
+        "thứ hai": "Nhóm 1 (Thứ 2 - Thứ 3)",
+        "thứ 2": "Nhóm 1 (Thứ 2 - Thứ 3)",
+        "thứ ba": "Nhóm 1 (Thứ 2 - Thứ 3)",
+        "thứ 3": "Nhóm 1 (Thứ 2 - Thứ 3)",
+        
+        "thứ tư": "Nhóm 2 (Thứ 4 - Thứ 5)",
+        "thứ 4": "Nhóm 2 (Thứ 4 - Thứ 5)",
+        "thứ năm": "Nhóm 2 (Thứ 4 - Thứ 5)",
+        "thứ 5": "Nhóm 2 (Thứ 4 - Thứ 5)",
+        
+        "thứ sáu": "Nhóm 3 (Thứ 6 - Chủ Nhật)",
+        "thứ 6": "Nhóm 3 (Thứ 6 - Chủ Nhật)",
+        "thứ bảy": "Nhóm 3 (Thứ 6 - Chủ Nhật)",
+        "thứ 7": "Nhóm 3 (Thứ 6 - Chủ Nhật)",
+        "chủ nhật": "Nhóm 3 (Thứ 6 - Chủ Nhật)",
+        "chủ nhật": "Nhóm 3 (Thứ 6 - Chủ Nhật)"
+    }
+    
+    groups = {
+        "Nhóm 1 (Thứ 2 - Thứ 3)": "",
+        "Nhóm 2 (Thứ 4 - Thứ 5)": "",
+        "Nhóm 3 (Thứ 6 - Chủ Nhật)": ""
+    }
+    
+    for day_name, content in chunks.items():
+        matched_group = None
+        for key, group_name in group_mapping.items():
+            if key in day_name.lower():
+                matched_group = group_name
+                break
+        if matched_group:
+            groups[matched_group] += content + "\n"
+        else:
+            # Fallback nếu tên ngày lạ, gộp vào Nhóm 1
+            groups["Nhóm 1 (Thứ 2 - Thứ 3)"] += content + "\n"
+            
+    # Lọc bỏ các nhóm rỗng
+    return {k: v for k, v in groups.items() if v.strip()}
+
+async def extract_single_chunk(group_name: str, chunk_text: str, departments: list) -> list:
+    """Gọi Gemini xử lý song song trong Thread Pool để tránh blocking luồng chính."""
+    
+    prompt = f"""
+Bạn là một trợ lý AI phân tích lịch công tác. Nhiệm vụ của bạn là đọc nội dung lịch dưới đây (dạng Markdown) và trích xuất thành danh sách các object JSON rút gọn.
+
+Quy tắc trích xuất (CHỈ trả về JSON array trực tiếp `[...]`, không bọc trong markdown code block, không giải thích thêm):
+[
+  {{
+    "title": "Nội dung công việc (chuỗi)",
+    "teacher": "Người chủ trì (tên người, ví dụ: Đ/c Vũ (PGĐ))",
+    "room": "Địa điểm (nếu có, không có để chuỗi rỗng)",
+    "scheduleDate": "Ngày diễn ra (định dạng YYYY-MM-DD). Hãy suy luận ngày dựa vào mốc thời gian trong văn bản của từng công việc.",
+    "startTime": "Giờ bắt đầu (định dạng HH:MM, mặc định 08:00)",
+    "endTime": "Giờ kết thúc (định dạng HH:MM, mặc định 11:30)",
+    "note": "Thành phần dự hoặc ghi chú (chuỗi)",
+    "department": "Tên viết tắt hoặc từ khóa của phòng ban liên quan nhất (ví dụ: QLĐT, HC, NV1... để trống nếu không rõ)"
+  }}
+]
+
+NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
+{chunk_text}
+"""
+    try:
+        # Chạy đồng bộ SDK Gemini trong Thread Pool bằng asyncio
+        loop = asyncio.get_event_loop()
+        
+        # Sử dụng gemini-3.1-flash-lite để có quota lớn và tốc độ siêu tốc (~5s/request)
+        model = genai.GenerativeModel('gemini-3.1-flash-lite')
+        
+        response = await loop.run_in_executor(
+            None, 
+            lambda: model.generate_content(prompt)
+        )
+        
+        result_text = response.text.strip()
+        
+        # Dọn sạch các ký tự bao bọc của code block json nếu có
+        if result_text.startswith("```json"):
+            result_text = result_text[7:]
+        if result_text.startswith("```"):
+            result_text = result_text[3:]
+        if result_text.endswith("```"):
+            result_text = result_text[:-3]
+            
+        result_text = result_text.strip()
+        parsed_json = json.loads(result_text)
+        
+        if isinstance(parsed_json, list):
+            # Hậu xử lý trên Python để điền các trường mặc định và map department UUID
+            for item in parsed_json:
+                item["unit"] = "Học viện ANND"
+                item["category"] = "ToanTruong"
+                item["participantUserIds"] = []
+                
+                # Ánh xạ tên phòng ban sang UUID
+                dept_name = item.pop("department", "")
+                item["departmentId"] = find_matching_department_id(dept_name, departments)
+                
+            return parsed_json
+        return []
+    except Exception as e:
+        print(f"Error extracting schedules for {group_name}: {e}")
+        return []
+
+async def extract_schedules_from_pdf_async(file_path: str, departments: list) -> list:
+    """Hàm chính điều phối: Trích xuất Markdown -> Tách các Thứ -> Nhóm 3 luồng song song -> Gộp kết quả."""
+    # 1. Parse PDF ra Markdown giữ nguyên cấu trúc bảng
+    md_text = parse_pdf_to_markdown(file_path)
+    if not md_text or not md_text.strip():
+        print("Empty text extracted from PDF.")
+        return []
+        
+    # 2. Phân tách và gộp nội dung lịch thành 3 nhóm (Tránh rate limit 5 RPM)
+    groups = split_markdown_into_groups(md_text)
+    
+    # 3. Tạo danh sách task chạy song song bằng asyncio (Tối đa 3 tasks concurrent)
+    tasks = []
+    for group_name, chunk_content in groups.items():
+        tasks.append(extract_single_chunk(group_name, chunk_content, departments))
+        
+    # 4. Thực thi song song và chờ tất cả hoàn thành
+    results = await asyncio.gather(*tasks)
+    
+    # 5. Gộp danh sách lịch từ các nhóm ngày
+    all_schedules = []
+    for group_schedules in results:
+        all_schedules.extend(group_schedules)
+        
+    return all_schedules
+

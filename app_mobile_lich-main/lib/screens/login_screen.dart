@@ -1,10 +1,14 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-
+import 'package:http/http.dart' as http;
 import 'package:firebase_messaging/firebase_messaging.dart';
 
 import '../data/api_auth_repository.dart';
 import '../data/api_schedule_repository.dart';
 import '../data/remember_login_storage.dart';
+import '../data/token_storage.dart';
+import '../data/api_config.dart';
+import '../models/user_profile.dart';
 import '../repositories/auth_repository.dart';
 import '../services/biometric_service.dart';
 import '../theme/app_colors.dart';
@@ -92,43 +96,33 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    Map<String, String>? credentials;
+    // Sau khi xác thực sinh trắc học, dùng Refresh Token để lấy Access Token mới
+    final refreshToken = await TokenStorage.getRefreshToken();
+    if (refreshToken == null) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Không tìm thấy phiên đăng nhập. Vui lòng đăng nhập bằng mật khẩu.';
+      });
+      return;
+    }
+
+    UserProfile? user;
     try {
-      credentials = await _biometricService.getCredentials();
-    } on BiometricChangedException {
-      setState(() {
-        _isLoading = false;
-        _isBiometricConfigured = false;
-        _errorMessage = 'Phát hiện cơ sở dữ liệu vân tay/Face ID trên thiết bị đã thay đổi. Vì lý do bảo mật, vui lòng đăng nhập lại bằng mật khẩu để liên kết lại.';
-      });
-      return;
+      // Gọi trực tiếp http.post để không bị vướng logic tự refresh của HttpClient
+      final refreshResponse = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/auth/refresh-token'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refresh_token': refreshToken}),
+      );
+
+      if (refreshResponse.statusCode == 200) {
+        final data = jsonDecode(refreshResponse.body);
+        await TokenStorage.saveTokens(data['access_token'], data['refresh_token']);
+        user = UserProfile.fromJson(data['user']);
+      }
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = 'Lỗi truy xuất thông tin bảo mật.';
-      });
-      return;
+      print('Biometric login error: $e');
     }
-
-    if (credentials == null) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = 'Không tìm thấy thông tin đăng nhập đã lưu.';
-      });
-      return;
-    }
-
-    final username = credentials['username']!;
-    final password = credentials['password']!;
-
-    // Tự động điền text fields để hiển thị cho người dùng biết tài khoản nào đang đăng nhập
-    _usernameController.text = username;
-    _passwordController.text = password;
-
-    final user = await _authRepository.login(
-      username: username,
-      password: password,
-    );
 
     if (!mounted) return;
 
@@ -138,7 +132,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (user == null) {
       setState(() {
-        _errorMessage = 'Tên đăng nhập hoặc mật khẩu đã lưu không đúng hoặc đã hết hạn.';
+        _errorMessage = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập bằng mật khẩu.';
       });
       return;
     }
@@ -155,7 +149,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (settings.authorizationStatus == AuthorizationStatus.authorized) {
         String? token = await messaging.getToken();
         if (token != null) {
-          final scheduleRepo = ApiScheduleRepository(currentUser: user);
+          final scheduleRepo = ApiScheduleRepository(currentUser: user!);
           await scheduleRepo.updateFcmToken(token);
         }
       }
@@ -169,7 +163,7 @@ class _LoginScreenState extends State<LoginScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => MainShell(
-          currentUser: user,
+          currentUser: user!,
         ),
       ),
     );

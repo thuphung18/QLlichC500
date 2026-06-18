@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 
 import '../models/schedule_item.dart';
+import '../theme/app_colors.dart';
 
 // ScheduleCard là card hiển thị một lịch.
 // Widget này dùng trong:
@@ -12,18 +14,19 @@ class ScheduleCard extends StatelessWidget {
   final ScheduleItem item;
   final Color accentColor;
   final VoidCallback? onTap;
+  final VoidCallback? onDelete;
 
   const ScheduleCard({
     super.key,
     required this.item,
     required this.accentColor,
     this.onTap,
+    this.onDelete,
   });
 
   @override
   Widget build(BuildContext context) {
     Widget card = Container(
-      margin: const EdgeInsets.only(bottom: 12),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -200,12 +203,94 @@ class ScheduleCard extends StatelessWidget {
       ),
     );
 
-    return item.isPassed
+    Widget finalCard = item.isPassed
         ? Opacity(
             opacity: 0.6,
             child: card,
           )
         : card;
+
+    if (onDelete != null) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Slidable(
+          key: Key('schedule_${item.id}'),
+          endActionPane: ActionPane(
+            motion: const ScrollMotion(),
+            extentRatio: 0.25,
+            children: [
+              CustomSlidableAction(
+                onPressed: (context) {
+                  showDialog(
+                    context: context,
+                    builder: (BuildContext context) {
+                      return AlertDialog(
+                        title: const Text("Xác nhận xóa"),
+                        content: const Text("Bạn có chắc chắn muốn xóa lịch này không?"),
+                        actions: <Widget>[
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text("Hủy"),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              onDelete!();
+                            },
+                            child: Text("Xóa", style: TextStyle(color: AppColors.error)),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
+                backgroundColor: Colors.transparent,
+                foregroundColor: AppColors.error,
+                padding: EdgeInsets.zero,
+                child: Container(
+                  margin: const EdgeInsets.only(left: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withAlpha(20),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.error.withAlpha(50)),
+                  ),
+                  alignment: Alignment.center,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.delete_outline, color: AppColors.error, size: 28),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Xóa',
+                        style: TextStyle(
+                          color: AppColors.error,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          child: Container(
+            // We moved the bottom margin of the card out to the Slidable's padding
+            // so the Slidable action button doesn't look misaligned
+            margin: EdgeInsets.zero,
+            child: finalCard,
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        margin: EdgeInsets.zero,
+        child: finalCard,
+      ),
+    );
   }
 }
 

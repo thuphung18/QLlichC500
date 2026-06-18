@@ -89,6 +89,7 @@ class SessionSection extends StatelessWidget {
                 (item) => ScheduleCard(
               item: item,
               accentColor: accentColor,
+              onDelete: onDelete != null ? () => onDelete!(item) : null,
               onTap: () {
                 Navigator.push(
                   context,

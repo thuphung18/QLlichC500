@@ -4,6 +4,7 @@ import 'http_client.dart';
 import '../models/user_profile.dart';
 import '../repositories/auth_repository.dart';
 import 'api_config.dart';
+import 'token_storage.dart';
 
 /// Lớp [ApiAuthRepository] triển khai (implements) interface [AuthRepository].
 /// Chịu trách nhiệm giao tiếp trực tiếp với Backend (API) cho các nghiệp vụ:
@@ -34,6 +35,14 @@ class ApiAuthRepository implements AuthRepository {
       // 200 OK: Đăng nhập thành công
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        
+        // Lưu access token và refresh token
+        final accessToken = data['access_token'];
+        final refreshToken = data['refresh_token'];
+        if (accessToken != null && refreshToken != null) {
+          await TokenStorage.saveTokens(accessToken, refreshToken);
+        }
+        
         // Trích xuất phần 'user' trong JSON trả về và parse thành UserProfile
         return UserProfile.fromJson(data['user']);
       }
