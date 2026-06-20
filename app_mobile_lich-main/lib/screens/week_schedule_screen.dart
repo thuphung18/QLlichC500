@@ -99,7 +99,7 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['pdf'],
+        allowedExtensions: ['pdf', 'docx', 'xlsx'],
         withData: true,
       );
 
@@ -118,7 +118,7 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
                   children: [
                     CircularProgressIndicator(),
                     SizedBox(height: 16),
-                    Text('AI đang đọc và xử lý file PDF...'),
+                    Text('AI đang đọc và xử lý tài liệu...'),
                   ],
                 ),
               ),
@@ -185,7 +185,7 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
             onPressed: _importPdf,
             backgroundColor: AppColors.accentLight,
             icon: const Icon(Icons.auto_awesome, color: Colors.white),
-            label: const Text('Import AI (PDF)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            label: const Text('Import AI', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
           const SizedBox(height: 12),
           FloatingActionButton.extended(

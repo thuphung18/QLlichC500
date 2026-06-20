@@ -421,7 +421,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(height: 10),
 
         // Nút quản trị - hiển thị theo role
-        if (RoleHelper.isAdmin(widget.profile.role))
+        if (RoleHelper.isAdmin(widget.profile.role) || RoleHelper.isManager(widget.profile.role))
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: SizedBox(
@@ -438,8 +438,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   );
                 },
-                icon: const Icon(Icons.admin_panel_settings),
-                label: const Text('Quản trị hệ thống'),
+                icon: Icon(RoleHelper.isAdmin(widget.profile.role)
+                    ? Icons.admin_panel_settings
+                    : Icons.manage_accounts),
+                label: Text(RoleHelper.isAdmin(widget.profile.role)
+                    ? 'Quản trị hệ thống'
+                    : 'Quản lý thành viên khoa'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.accentLight,
                   foregroundColor: Colors.white,

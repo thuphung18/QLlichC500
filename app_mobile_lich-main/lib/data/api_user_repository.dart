@@ -254,7 +254,9 @@ class ApiUserRepository {
         body: jsonEncode(request.toJson()),
       );
       if (response.statusCode == 200) {
-        return UserProfile.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
+        final json = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+        json['sessionToken'] = sessionToken;
+        return UserProfile.fromJson(json);
       }
       print('Update profile failed: ${response.statusCode} - ${response.body}');
       return null;

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
@@ -19,6 +20,7 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   Future<void> init() async {
+    if (kIsWeb) return;
     // Khởi tạo timezone
     tz.initializeTimeZones();
     tz.setLocalLocation(tz.getLocation('Asia/Ho_Chi_Minh')); // Setup timezone Vietnam
@@ -51,6 +53,7 @@ class NotificationService {
   }
 
   Future<void> scheduleScheduleNotification(ScheduleItem item) async {
+    if (kIsWeb) return;
     final startDateTime = item.startDateTime;
     if (startDateTime == null) return;
 
@@ -91,6 +94,7 @@ class NotificationService {
   }
 
   Future<void> showNotification({required int id, required String title, required String body}) async {
+    if (kIsWeb) return;
     await flutterLocalNotificationsPlugin.show(
       id: id,
       title: title,
@@ -110,6 +114,7 @@ class NotificationService {
   }
 
   Future<void> cancelAll() async {
+    if (kIsWeb) return;
     await flutterLocalNotificationsPlugin.cancelAll();
   }
 }

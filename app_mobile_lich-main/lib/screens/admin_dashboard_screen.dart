@@ -34,7 +34,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   void initState() {
     super.initState();
     _userRepo = ApiUserRepository(sessionToken: widget.adminProfile.sessionToken ?? '');
-    _tabController = TabController(length: 2, vsync: this);
+    final isManager = RoleHelper.isManager(widget.adminProfile.role);
+    _tabController = TabController(length: isManager ? 1 : 2, vsync: this);
     _loadUsers();
     _loadDepartments();
   }
@@ -52,6 +53,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   }
 
   Future<void> _loadDepartments() async {
+    if (RoleHelper.isManager(widget.adminProfile.role)) {
+      setState(() {
+        _departments = [
+          {
+            'id': widget.adminProfile.departmentId,
+            'name': widget.adminProfile.departmentName,
+          }
+        ];
+        _isLoadingDepts = false;
+      });
+      return;
+    }
     setState(() => _isLoadingDepts = true);
     final depts = await _userRepo.getDepartments(widget.adminProfile.id);
     if (mounted) setState(() { _departments = depts; _isLoadingDepts = false; });
@@ -306,31 +319,40 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
   @override
   Widget build(BuildContext context) {
+    final isManager = RoleHelper.isManager(widget.adminProfile.role);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Quản trị hệ thống', style: TextStyle(fontWeight: FontWeight.w800)),
+        title: Text(
+          isManager ? 'Quản lý thành viên khoa' : 'Quản trị hệ thống',
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
         elevation: 0,
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          labelStyle: const TextStyle(fontWeight: FontWeight.w700),
-          tabs: const [
-            Tab(icon: Icon(Icons.group), text: 'Tài khoản'),
-            Tab(icon: Icon(Icons.business), text: 'Phòng ban'),
-          ],
-        ),
+        bottom: isManager
+            ? null
+            : TabBar(
+                controller: _tabController,
+                indicatorColor: Colors.white,
+                labelColor: Colors.white,
+                unselectedLabelColor: Colors.white70,
+                labelStyle: const TextStyle(fontWeight: FontWeight.w700),
+                tabs: const [
+                  Tab(icon: Icon(Icons.group), text: 'Tài khoản'),
+                  Tab(icon: Icon(Icons.business), text: 'Phòng ban'),
+                ],
+              ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildUsersTab(),
-          _buildDeptsTab(),
-        ],
-      ),
+      body: isManager
+          ? _buildUsersTab()
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                _buildUsersTab(),
+                _buildDeptsTab(),
+              ],
+            ),
     );
   }
 

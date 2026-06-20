@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,6 +26,7 @@ class BiometricService {
 
   /// Kiểm tra xem thiết bị có hỗ trợ phần cứng sinh trắc học hay không
   Future<bool> isDeviceSupported() async {
+    if (kIsWeb) return false;
     try {
       final bool isSupported = await _auth.isDeviceSupported();
       final bool canCheck = await _auth.canCheckBiometrics;
@@ -37,6 +39,7 @@ class BiometricService {
 
   /// Kiểm tra xem người dùng đã cài vân tay hoặc nhận diện khuôn mặt trong máy chưa
   Future<bool> hasEnrolledBiometrics() async {
+    if (kIsWeb) return false;
     try {
       final availableBiometrics = await _auth.getAvailableBiometrics();
       return availableBiometrics.isNotEmpty;
@@ -48,6 +51,7 @@ class BiometricService {
 
   /// Kích hoạt hộp thoại quét vân tay hoặc khuôn mặt của hệ điều hành
   Future<bool> authenticate() async {
+    if (kIsWeb) return false;
     try {
       return await _auth.authenticate(
         localizedReason: 'Vui lòng xác thực vân tay hoặc nhận diện khuôn mặt để tiếp tục',
@@ -64,18 +68,21 @@ class BiometricService {
 
   /// Kiểm tra xem người dùng đã bật cài đặt sinh trắc học trong App chưa
   Future<bool> isBiometricEnabled() async {
+    if (kIsWeb) return false;
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_keyBiometricEnabled) ?? false;
   }
 
   /// Lưu trạng thái bật/tắt cài đặt sinh trắc học
   Future<void> _setBiometricEnabled(bool enabled) async {
+    if (kIsWeb) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyBiometricEnabled, enabled);
   }
 
   /// Lưu trữ bảo mật tài khoản/mật khẩu khi người dùng bật sinh trắc học
   Future<void> saveCredentials(String username, String password) async {
+    if (kIsWeb) return;
     await _secureStorage.write(
       key: _secureKeyUsername,
       value: username.trim(),
@@ -94,6 +101,7 @@ class BiometricService {
   /// Đọc tài khoản/mật khẩu từ vùng nhớ bảo mật.
   /// Nếu người dùng có thay đổi về danh sách vân tay/khuôn mặt, hệ thống sẽ ném ra ngoại lệ.
   Future<Map<String, String>?> getCredentials() async {
+    if (kIsWeb) return null;
     try {
       final username = await _secureStorage.read(
         key: _secureKeyUsername,
@@ -123,6 +131,7 @@ class BiometricService {
 
   /// Xóa thông tin đã lưu trữ bảo mật khi tắt cài đặt sinh trắc học hoặc khi đăng xuất
   Future<void> clearCredentials() async {
+    if (kIsWeb) return;
     await _secureStorage.delete(
       key: _secureKeyUsername,
       aOptions: _androidOptions,

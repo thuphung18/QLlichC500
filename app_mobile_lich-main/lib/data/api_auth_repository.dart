@@ -44,7 +44,9 @@ class ApiAuthRepository implements AuthRepository {
         }
         
         // Trích xuất phần 'user' trong JSON trả về và parse thành UserProfile
-        return UserProfile.fromJson(data['user']);
+        final userJson = Map<String, dynamic>.from(data['user']);
+        userJson['sessionToken'] = accessToken;
+        return UserProfile.fromJson(userJson);
       }
       return null;
     } catch (e) {

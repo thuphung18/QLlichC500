@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_messaging/firebase_messaging.dart';
 
@@ -118,7 +119,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (refreshResponse.statusCode == 200) {
         final data = jsonDecode(refreshResponse.body);
         await TokenStorage.saveTokens(data['access_token'], data['refresh_token']);
-        user = UserProfile.fromJson(data['user']);
+        final userJson = Map<String, dynamic>.from(data['user']);
+        userJson['sessionToken'] = data['access_token'];
+        user = UserProfile.fromJson(userJson);
       }
     } catch (e) {
       print('Biometric login error: $e');
@@ -138,23 +141,25 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     // Yêu cầu quyền thông báo và lấy FCM Token
-    try {
-      FirebaseMessaging messaging = FirebaseMessaging.instance;
-      NotificationSettings settings = await messaging.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
+    if (!kIsWeb) {
+      try {
+        FirebaseMessaging messaging = FirebaseMessaging.instance;
+        NotificationSettings settings = await messaging.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
 
-      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        String? token = await messaging.getToken();
-        if (token != null) {
-          final scheduleRepo = ApiScheduleRepository(currentUser: user!);
-          await scheduleRepo.updateFcmToken(token);
+        if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+          String? token = await messaging.getToken();
+          if (token != null) {
+            final scheduleRepo = ApiScheduleRepository(currentUser: user!);
+            await scheduleRepo.updateFcmToken(token);
+          }
         }
+      } catch (e) {
+        print('Firebase Messaging init error: $e');
       }
-    } catch (e) {
-      print('Firebase Messaging init error: $e');
     }
 
     if (!mounted) return;
@@ -224,24 +229,26 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
 
     // Yêu cầu quyền thông báo và lấy FCM Token
-    try {
-      FirebaseMessaging messaging = FirebaseMessaging.instance;
-      NotificationSettings settings = await messaging.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
+    if (!kIsWeb) {
+      try {
+        FirebaseMessaging messaging = FirebaseMessaging.instance;
+        NotificationSettings settings = await messaging.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
 
-      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        String? token = await messaging.getToken();
-        if (token != null) {
-          // Gửi token lên server
-          final scheduleRepo = ApiScheduleRepository(currentUser: user);
-          await scheduleRepo.updateFcmToken(token);
+        if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+          String? token = await messaging.getToken();
+          if (token != null) {
+            // Gửi token lên server
+            final scheduleRepo = ApiScheduleRepository(currentUser: user);
+            await scheduleRepo.updateFcmToken(token);
+          }
         }
+      } catch (e) {
+        print('Firebase Messaging init error: $e');
       }
-    } catch (e) {
-      print('Firebase Messaging init error: $e');
     }
 
     if (!mounted) return;

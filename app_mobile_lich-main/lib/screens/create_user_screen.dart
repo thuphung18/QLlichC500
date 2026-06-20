@@ -47,7 +47,16 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
       final scheduleRepo = ApiScheduleRepository(currentUser: widget.currentUser);
       final formData = await scheduleRepo.getFormData();
       setState(() {
-        _departments = formData.departments;
+        if (RoleHelper.isManager(widget.currentUser.role)) {
+          _departments = formData.departments
+              .where((d) => d.id == widget.currentUser.departmentId)
+              .toList();
+          if (_departments.isEmpty) {
+            _departments = formData.departments;
+          }
+        } else {
+          _departments = formData.departments;
+        }
         // Mặc định chọn phòng ban đầu tiên trong danh sách để tránh bị rỗng (null)
         if (_departments.isNotEmpty) {
           _selectedDepartmentId = _departments.first.id;

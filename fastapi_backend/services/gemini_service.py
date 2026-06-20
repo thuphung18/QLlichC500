@@ -268,26 +268,92 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
         print(f"Error extracting schedules for {group_name}: {e}")
         return []
 
-async def extract_schedules_from_pdf_async(file_path: str, departments: list) -> list:
-    """Hàm chính điều phối: Trích xuất Markdown -> Tách các Thứ -> Nhóm 3 luồng song song -> Gộp kết quả."""
-    # 1. Parse PDF ra Markdown giữ nguyên cấu trúc bảng
-    md_text = parse_pdf_to_markdown(file_path)
-    if not md_text or not md_text.strip():
-        print("Empty text extracted from PDF.")
+def parse_docx_to_markdown(file_path: str) -> str:
+    """Chuyển đổi file Word (.docx) sang Markdown bao gồm cả bảng biểu."""
+    try:
+        import docx
+        doc = docx.Document(file_path)
+        content = []
+        
+        # Duyệt tuần tự các phần tử (đoạn văn & bảng biểu) trong body của tài liệu
+        for block in doc.element.body:
+            name = block.tag.split('}')[-1]
+            if name == 'p':
+                p = docx.text.paragraph.Paragraph(block, doc)
+                if p.text.strip():
+                    content.append(p.text.strip())
+            elif name == 'tbl':
+                table = docx.table.Table(block, doc)
+                table_md = []
+                for r_idx, row in enumerate(table.rows):
+                    row_cells = [cell.text.strip().replace("\n", " ") for cell in row.cells]
+                    table_md.append(f"| {' | '.join(row_cells)} |")
+                    if r_idx == 0:
+                        separators = ["---"] * len(row_cells)
+                        table_md.append(f"| {' | '.join(separators)} |")
+                content.append("\n".join(table_md) + "\n")
+        return "\n".join(content)
+    except Exception as e:
+        print(f"Error parsing Word (.docx) to Markdown: {e}")
+        return ""
+
+def parse_xlsx_to_markdown(file_path: str) -> str:
+    """Chuyển đổi file Excel (.xlsx) sang Markdown Table."""
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+        sheet = wb.active
+        content = []
+        
+        table_md = []
+        for r_idx, row in enumerate(sheet.iter_rows(values_only=True)):
+            # Chuyển các cell None thành chuỗi rỗng và lọc bỏ ký tự xuống dòng
+            row_cells = [str(cell).strip().replace("\n", " ") if cell is not None else "" for cell in row]
+            
+            # Bỏ qua các dòng trống hoàn toàn
+            if not any(row_cells):
+                continue
+                
+            table_md.append(f"| {' | '.join(row_cells)} |")
+            if r_idx == 0:
+                separators = ["---"] * len(row_cells)
+                table_md.append(f"| {' | '.join(separators)} |")
+                
+        content.append("\n".join(table_md))
+        wb.close()
+        return "\n".join(content)
+    except Exception as e:
+        print(f"Error parsing Excel (.xlsx) to Markdown: {e}")
+        return ""
+
+async def extract_schedules_from_file_async(file_path: str, file_ext: str, departments: list) -> list:
+    """Hàm chính điều phối: Trích xuất nội dung tùy định dạng -> Phân tách theo Thứ -> Nhóm 3 luồng song song -> Gộp kết quả."""
+    if file_ext == '.pdf':
+        md_text = parse_pdf_to_markdown(file_path)
+    elif file_ext == '.docx':
+        md_text = parse_docx_to_markdown(file_path)
+    elif file_ext == '.xlsx':
+        md_text = parse_xlsx_to_markdown(file_path)
+    else:
+        print(f"Unsupported file extension: {file_ext}")
         return []
         
-    # 2. Phân tách và gộp nội dung lịch thành 3 nhóm (Tránh rate limit 5 RPM)
+    if not md_text or not md_text.strip():
+        print("Empty text extracted from file.")
+        return []
+        
+    # Phân tách và gộp nội dung lịch thành 3 nhóm (Tránh rate limit 5 RPM)
     groups = split_markdown_into_groups(md_text)
     
-    # 3. Tạo danh sách task chạy song song bằng asyncio (Tối đa 3 tasks concurrent)
+    # Tạo danh sách task chạy song song bằng asyncio (Tối đa 3 tasks concurrent)
     tasks = []
     for group_name, chunk_content in groups.items():
         tasks.append(extract_single_chunk(group_name, chunk_content, departments))
         
-    # 4. Thực thi song song và chờ tất cả hoàn thành
+    # Thực thi song song và chờ tất cả hoàn thành
     results = await asyncio.gather(*tasks)
     
-    # 5. Gộp danh sách lịch từ các nhóm ngày
+    # Gộp danh sách lịch từ các nhóm ngày
     all_schedules = []
     for group_schedules in results:
         all_schedules.extend(group_schedules)

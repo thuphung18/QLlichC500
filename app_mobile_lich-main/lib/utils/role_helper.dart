@@ -7,10 +7,10 @@ class RoleHelper {
     return r == 'admin' || r == 'quản trị viên';
   }
 
-  /// Kiểm tra người dùng có phải là Trưởng phòng (Manager) không.
+  /// Kiểm tra người dùng có phải là Trưởng phòng (Manager) hoặc Trưởng khoa không.
   static bool isManager(String role) {
     final r = role.toLowerCase().trim();
-    return r == 'manager' || r == 'trưởng phòng';
+    return r == 'manager' || r == 'trưởng phòng' || r == 'trưởng khoa';
   }
 
   /// Kiểm tra người dùng có quyền tạo / xóa lịch không.
@@ -22,6 +22,8 @@ class RoleHelper {
   /// Lấy nhãn hiển thị thân thiện theo role.
   static String getDisplayLabel(String role) {
     if (isAdmin(role)) return 'Quản trị viên';
+    final r = role.toLowerCase().trim();
+    if (r == 'trưởng khoa') return 'Trưởng khoa';
     if (isManager(role)) return 'Trưởng phòng';
     return 'Nhân viên';
   }

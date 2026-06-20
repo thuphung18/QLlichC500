@@ -21,28 +21,40 @@ class HttpClient {
   static Future<http.Response> get(Uri url, {Map<String, String>? headers}) async {
     final authHeaders = await _getHeaders(headers);
     var response = await http.get(url, headers: authHeaders);
-    response = await _checkUnauthorizedAndRetry(response, () => http.get(url, headers: authHeaders));
+    response = await _checkUnauthorizedAndRetry(response, () async {
+      final newHeaders = await _getHeaders(headers);
+      return http.get(url, headers: newHeaders);
+    });
     return response;
   }
 
   static Future<http.Response> post(Uri url, {Map<String, String>? headers, Object? body}) async {
     final authHeaders = await _getHeaders(headers);
     var response = await http.post(url, headers: authHeaders, body: body);
-    response = await _checkUnauthorizedAndRetry(response, () => http.post(url, headers: authHeaders, body: body));
+    response = await _checkUnauthorizedAndRetry(response, () async {
+      final newHeaders = await _getHeaders(headers);
+      return http.post(url, headers: newHeaders, body: body);
+    });
     return response;
   }
 
   static Future<http.Response> put(Uri url, {Map<String, String>? headers, Object? body}) async {
     final authHeaders = await _getHeaders(headers);
     var response = await http.put(url, headers: authHeaders, body: body);
-    response = await _checkUnauthorizedAndRetry(response, () => http.put(url, headers: authHeaders, body: body));
+    response = await _checkUnauthorizedAndRetry(response, () async {
+      final newHeaders = await _getHeaders(headers);
+      return http.put(url, headers: newHeaders, body: body);
+    });
     return response;
   }
 
   static Future<http.Response> delete(Uri url, {Map<String, String>? headers}) async {
     final authHeaders = await _getHeaders(headers);
     var response = await http.delete(url, headers: authHeaders);
-    response = await _checkUnauthorizedAndRetry(response, () => http.delete(url, headers: authHeaders));
+    response = await _checkUnauthorizedAndRetry(response, () async {
+      final newHeaders = await _getHeaders(headers);
+      return http.delete(url, headers: newHeaders);
+    });
     return response;
   }
 

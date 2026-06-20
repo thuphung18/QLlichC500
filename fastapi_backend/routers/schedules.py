@@ -51,7 +51,7 @@ def _is_admin(role: str) -> bool:
     return role in ["admin", "quản trị viên"]
 
 def _is_manager(role: str) -> bool:
-    return role in ["trưởng phòng", "manager"]
+    return role in ["trưởng phòng", "manager", "trưởng khoa"]
 
 def _can_create_schedule(role: str) -> bool:
     return _is_admin(role) or _is_manager(role)
@@ -320,15 +320,20 @@ from fastapi import UploadFile, File
 @router.post("/import")
 async def import_schedules(file: UploadFile = File(...), db: pyodbc.Connection = Depends(get_db)):
     """
-    Nhận file (PDF), trích xuất text, và dùng Gemini AI để tạo danh sách lịch (JSON).
+    Nhận file (PDF, Word, Excel), trích xuất text, và dùng Gemini AI để tạo danh sách lịch (JSON).
     Chỉ trả về JSON, chưa lưu vào DB.
     """
-    if not file.filename.lower().endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Hiện tại hệ thống chỉ hỗ trợ import từ file PDF.")
+    allowed_exts = ['.pdf', '.docx', '.xlsx']
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    if file_ext not in allowed_exts:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Hệ thống chỉ hỗ trợ các định dạng: {', '.join(allowed_exts)}"
+        )
         
     try:
-        # Lưu file tạm
-        temp_file_path = f"temp_{uuid.uuid4()}.pdf"
+        # Lưu file tạm và giữ nguyên đuôi mở rộng để nhận diện định dạng
+        temp_file_path = f"temp_{uuid.uuid4()}{file_ext}"
         with open(temp_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
             
@@ -338,9 +343,9 @@ async def import_schedules(file: UploadFile = File(...), db: pyodbc.Connection =
         departments = [{"id": str(row[0]), "name": row[1]} for row in cursor.fetchall()]
         cursor.close()
         
-        # Gọi Gemini AI xử lý song song bất đồng bộ
-        from services.gemini_service import extract_schedules_from_pdf_async
-        schedules_json = await extract_schedules_from_pdf_async(temp_file_path, departments)
+        # Gọi Gemini AI xử lý song song bất đồng bộ (nhận diện theo định dạng file)
+        from services.gemini_service import extract_schedules_from_file_async
+        schedules_json = await extract_schedules_from_file_async(temp_file_path, file_ext, departments)
         
         # Xóa file tạm sau khi hoàn tất xử lý
         if os.path.exists(temp_file_path):

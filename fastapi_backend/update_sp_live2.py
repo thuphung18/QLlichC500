@@ -55,7 +55,7 @@ BEGIN
 
     IF @UserRole IN (N'admin', N'quản trị viên')
         SET @IsAdmin = 1;
-    ELSE IF @UserRole IN (N'trưởng phòng', N'manager')
+    ELSE IF @UserRole IN (N'trưởng phòng', N'manager', N'trưởng khoa')
         SET @IsManager = 1;
 
     SELECT
