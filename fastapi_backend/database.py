@@ -1,12 +1,13 @@
+import os
 import pyodbc
 from typing import Generator
 
-# Cấu hình kết nối SQL Server từ xa (SQL Server Authentication)
-SERVER = '203.128.246.222,1433'
-DATABASE = 'weekly_schedule_db'
-DRIVER = '{ODBC Driver 17 for SQL Server}' # Đổi thành '{SQL Server}' nếu không có Driver 17
-UID = 'nghiand'
-PWD = '@NangHaNoi2020@'
+# Cấu hình kết nối SQL Server (Đọc từ biến môi trường hoặc dùng mặc định từ xa)
+SERVER = os.environ.get('DB_SERVER', '203.128.246.222,1433')
+DATABASE = os.environ.get('DB_DATABASE', 'weekly_schedule_db')
+DRIVER = os.environ.get('DB_DRIVER', '{ODBC Driver 17 for SQL Server}') # Đổi thành '{SQL Server}' nếu không có Driver 17
+UID = os.environ.get('DB_UID', 'nghiand')
+PWD = os.environ.get('DB_PWD', '@NangHaNoi2020@')
 
 def get_connection() -> pyodbc.Connection:
     """
