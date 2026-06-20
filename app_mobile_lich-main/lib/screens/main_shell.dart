@@ -85,16 +85,7 @@ class _MainShellState extends State<MainShell> {
     try {
       final mySchedules = await _repository.getMySchedules();
       final notificationService = NotificationService();
-      
-      // Xóa các lịch nhắc nhở cũ để tránh bị trùng lặp
-      await notificationService.cancelAll();
-      
-      // Lên lịch cho tất cả các sự kiện cá nhân chưa diễn ra
-      for (final item in mySchedules) {
-        if (!item.isPassed) {
-          await notificationService.scheduleScheduleNotification(item);
-        }
-      }
+      await notificationService.updateScheduledNotifications(mySchedules);
     } catch (e) {
       print("Lỗi lên lịch thông báo: $e");
     }

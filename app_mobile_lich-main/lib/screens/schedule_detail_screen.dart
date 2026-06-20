@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-
 import '../models/schedule_item.dart';
+import '../utils/calendar_export_helper.dart';
 
 // ScheduleDetailScreen là màn hình chi tiết lịch.
 // Khi bấm vào một lịch, màn này sẽ hiển thị toàn cảnh lịch đó.
@@ -189,6 +189,56 @@ class ScheduleDetailScreen extends StatelessWidget {
                 height: 1.5,
                 color: Theme.of(context).textTheme.bodyLarge?.color ?? const Color(0xFF334155),
                 fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: () async {
+              try {
+                await CalendarExportHelper.launchGoogleCalendar(item);
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Không thể mở Google Calendar: $e')),
+                );
+              }
+            },
+            icon: const Icon(Icons.calendar_today, color: Colors.white),
+            label: const Text(
+              'Thêm vào Google Calendar',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF4285F4),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: 2,
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () async {
+              try {
+                final dateClean = item.dateLabel.replaceAll('/', '_');
+                await CalendarExportHelper.exportToIcs([item], 'lich_$dateClean.ics');
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Lỗi xuất file .ics: $e')),
+                );
+              }
+            },
+            icon: Icon(Icons.file_download, color: accentColor),
+            label: Text(
+              'Xuất file lịch (.ics)',
+              style: TextStyle(color: accentColor, fontWeight: FontWeight.bold),
+            ),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: accentColor, width: 1.5),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
           ),

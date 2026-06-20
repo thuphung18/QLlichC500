@@ -11,6 +11,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/schedule_summary_card.dart';
 import '../widgets/session_section.dart';
 import '../services/notification_service.dart';
+import '../utils/calendar_export_helper.dart';
 import '../theme/app_colors.dart';
 import 'create_schedule_screen.dart';
 import 'review_imported_schedule_screen.dart';
@@ -88,6 +89,13 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
       setState(() {
         _loadSchedules();
       });
+      // Đồng bộ lại thông báo cục bộ sau khi xóa lịch
+      widget.repository.getMySchedules().then((mySchedules) async {
+        final notificationService = NotificationService();
+        await notificationService.updateScheduledNotifications(mySchedules);
+      }).catchError((e) {
+        print("Lỗi cập nhật thông báo sau khi xóa lịch: $e");
+      });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Xóa lịch thất bại, vui lòng thử lại')),
@@ -152,6 +160,13 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
             setState(() {
               _loadSchedules();
             });
+            // Đồng bộ lại thông báo cục bộ sau khi import AI thành công
+            widget.repository.getMySchedules().then((mySchedules) async {
+              final notificationService = NotificationService();
+              await notificationService.updateScheduledNotifications(mySchedules);
+            }).catchError((e) {
+              print("Lỗi cập nhật thông báo sau khi import: $e");
+            });
           }
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -172,7 +187,6 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
   @override
   Widget build(BuildContext context) {
     final canManage = RoleHelper.canManageSchedule(widget.repository.currentUser.role);
-    final isAdmin = RoleHelper.isAdmin(widget.repository.currentUser.role);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -204,12 +218,7 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
                 // Update local notifications for the newly created schedules
                 widget.repository.getMySchedules().then((mySchedules) async {
                   final notificationService = NotificationService();
-                  await notificationService.cancelAll();
-                  for (final item in mySchedules) {
-                    if (!item.isPassed) {
-                      await notificationService.scheduleScheduleNotification(item);
-                    }
-                  }
+                  await notificationService.updateScheduledNotifications(mySchedules);
                 }).catchError((e) {
                   print("Lỗi update notifications: $e");
                 });
@@ -230,7 +239,64 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
             icon: Icons.calendar_month,
             accentColor: Theme.of(context).colorScheme.primary,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Lịch trình tuần này:',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: Theme.of(context).textTheme.bodyMedium?.color ?? const Color(0xFF64748B),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () async {
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (context) => const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
+                  try {
+                    final allSchedules = await widget.repository.getAllSchedules();
+                    if (context.mounted) Navigator.pop(context);
+                    
+                    if (allSchedules.isEmpty) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Không có lịch biểu nào trong tuần này để xuất.')),
+                        );
+                      }
+                      return;
+                    }
+                    
+                    final filename = widget.isAdmin ? 'lich_tuan_toan_truong.ics' : 'lich_tuan_ca_nhan.ics';
+                    await CalendarExportHelper.exportToIcs(allSchedules, filename);
+                  } catch (e) {
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Lỗi xuất lịch tuần: $e')),
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.download, size: 18),
+                label: const Text('Tải lịch tuần (.ics)', style: TextStyle(fontWeight: FontWeight.bold)),
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           DaySelector(
             selectedDayIndex: AppState().selectedDayNotifier.value,
             onChanged: (value) {

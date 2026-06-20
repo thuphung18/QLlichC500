@@ -9,9 +9,10 @@ import '../widgets/empty_state.dart';
 import '../widgets/schedule_summary_card.dart';
 import '../widgets/session_section.dart';
 import '../theme/app_colors.dart';
-import '../theme/app_colors.dart';
 import 'create_schedule_screen.dart';
 import 'dart:async';
+import '../services/notification_service.dart';
+import '../utils/calendar_export_helper.dart';
 import '../utils/event_bus.dart';
 import '../utils/app_state.dart';
 
@@ -84,6 +85,13 @@ class _DepartmentScheduleScreenState extends State<DepartmentScheduleScreen> {
       setState(() {
         _loadSchedules();
       });
+      // Đồng bộ lại thông báo cục bộ sau khi xóa lịch
+      widget.repository.getMySchedules().then((mySchedules) async {
+        final notificationService = NotificationService();
+        await notificationService.updateScheduledNotifications(mySchedules);
+      }).catchError((e) {
+        print("Lỗi cập nhật thông báo sau khi xóa lịch: $e");
+      });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Xóa lịch thất bại, vui lòng thử lại')),
@@ -123,7 +131,63 @@ class _DepartmentScheduleScreenState extends State<DepartmentScheduleScreen> {
             icon: Icons.business,
             accentColor: AppColors.success,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Lịch trình của khoa:',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: Theme.of(context).textTheme.bodyMedium?.color ?? const Color(0xFF64748B),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () async {
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (context) => const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
+                  try {
+                    final deptSchedules = await widget.repository.getDepartmentSchedules();
+                    if (context.mounted) Navigator.pop(context);
+                    
+                    if (deptSchedules.isEmpty) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Không có lịch biểu khoa nào để xuất.')),
+                        );
+                      }
+                      return;
+                    }
+                    
+                    await CalendarExportHelper.exportToIcs(deptSchedules, 'lich_khoa.ics');
+                  } catch (e) {
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Lỗi xuất lịch khoa: $e')),
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.download, size: 18),
+                label: const Text('Tải lịch khoa (.ics)', style: TextStyle(fontWeight: FontWeight.bold)),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.success,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           DaySelector(
             selectedDayIndex: AppState().selectedDayNotifier.value,
             onChanged: (value) {

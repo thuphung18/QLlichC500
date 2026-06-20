@@ -10,6 +10,8 @@ import '../widgets/schedule_summary_card.dart';
 import '../widgets/session_section.dart';
 import '../theme/app_colors.dart';
 import 'dart:async';
+import '../services/notification_service.dart';
+import '../utils/calendar_export_helper.dart';
 import '../utils/event_bus.dart';
 import '../utils/app_state.dart';
 
@@ -80,6 +82,13 @@ class _MyScheduleScreenState extends State<MyScheduleScreen> {
       setState(() {
         _loadSchedules();
       });
+      // Đồng bộ lại thông báo cục bộ sau khi xóa lịch
+      widget.repository.getMySchedules().then((mySchedules) async {
+        final notificationService = NotificationService();
+        await notificationService.updateScheduledNotifications(mySchedules);
+      }).catchError((e) {
+        print("Lỗi cập nhật thông báo sau khi xóa lịch: $e");
+      });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Xóa lịch thất bại, vui lòng thử lại')),
@@ -100,7 +109,63 @@ class _MyScheduleScreenState extends State<MyScheduleScreen> {
           icon: Icons.person_pin_circle,
           accentColor: Theme.of(context).colorScheme.primary,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Lịch trình cá nhân:',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: Theme.of(context).textTheme.bodyMedium?.color ?? const Color(0xFF64748B),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () async {
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (context) => const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+                try {
+                  final mySchedules = await widget.repository.getMySchedules();
+                  if (context.mounted) Navigator.pop(context);
+                  
+                  if (mySchedules.isEmpty) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Không có lịch biểu cá nhân nào để xuất.')),
+                      );
+                    }
+                    return;
+                  }
+                  
+                  await CalendarExportHelper.exportToIcs(mySchedules, 'lich_ca_nhan.ics');
+                } catch (e) {
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Lỗi xuất lịch cá nhân: $e')),
+                    );
+                  }
+                }
+              },
+              icon: const Icon(Icons.download, size: 18),
+              label: const Text('Tải lịch cá nhân (.ics)', style: TextStyle(fontWeight: FontWeight.bold)),
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.primary,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
         DaySelector(
           selectedDayIndex: AppState().selectedDayNotifier.value,
           onChanged: (value) {

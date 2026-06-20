@@ -36,6 +36,7 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
 
   String? _selectedDepartmentId;
   final Set<String> _selectedUserIds = {};
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -286,28 +287,56 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
                           const SizedBox(height: 24),
                           const Text('Thành phần tham dự:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                           const SizedBox(height: 8),
+                          TextField(
+                            decoration: const InputDecoration(
+                              hintText: 'Tìm kiếm người tham dự...',
+                              prefixIcon: Icon(Icons.search),
+                              border: OutlineInputBorder(),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            ),
+                            onChanged: (val) {
+                              setState(() {
+                                _searchQuery = val.trim().toLowerCase();
+                              });
+                            },
+                          ),
+                          const SizedBox(height: 8),
                           Container(
                             decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade400), borderRadius: BorderRadius.circular(4)),
                             height: 200,
-                            child: ListView.builder(
-                              itemCount: _users.length,
-                              itemBuilder: (context, index) {
-                                final user = _users[index];
-                                return CheckboxListTile(
-                                  title: Text(user.fullName),
-                                  subtitle: Text(user.departmentId),
-                                  value: _selectedUserIds.contains(user.id),
-                                  onChanged: (bool? checked) {
-                                    setState(() {
-                                      if (checked == true) {
-                                        _selectedUserIds.add(user.id);
-                                      } else {
-                                        _selectedUserIds.remove(user.id);
-                                      }
-                                    });
+                            child: Builder(
+                              builder: (context) {
+                                final filteredUsers = _users
+                                    .where((user) => user.fullName.toLowerCase().contains(_searchQuery))
+                                    .toList();
+                                    
+                                if (filteredUsers.isEmpty) {
+                                  return const Center(
+                                    child: Text('Không tìm thấy kết quả', style: TextStyle(color: Colors.grey)),
+                                  );
+                                }
+                                
+                                return ListView.builder(
+                                  itemCount: filteredUsers.length,
+                                  itemBuilder: (context, index) {
+                                    final user = filteredUsers[index];
+                                    return CheckboxListTile(
+                                      title: Text(user.fullName),
+                                      subtitle: Text(user.departmentId),
+                                      value: _selectedUserIds.contains(user.id),
+                                      onChanged: (bool? checked) {
+                                        setState(() {
+                                          if (checked == true) {
+                                            _selectedUserIds.add(user.id);
+                                          } else {
+                                            _selectedUserIds.remove(user.id);
+                                          }
+                                        });
+                                      },
+                                    );
                                   },
                                 );
-                              },
+                              }
                             ),
                           ),
                           const SizedBox(height: 24),

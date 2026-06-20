@@ -5,12 +5,14 @@ import '../models/user_profile.dart';
 import '../utils/role_helper.dart';
 import '../widgets/app_header.dart';
 import 'admin_dashboard_screen.dart';
-import 'create_user_screen.dart';
 import 'edit_profile_screen.dart';
 import 'change_password_screen.dart';
 import '../services/biometric_service.dart';
 import '../data/remember_login_storage.dart';
 import '../theme/app_colors.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../data/api_schedule_repository.dart';
+import '../services/notification_service.dart';
 
 // ProfileScreen là màn hình cá nhân.
 // Hiển thị thông tin user đang đăng nhập.
@@ -36,11 +38,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   bool _isDeviceSupported = false;
   bool _isBiometricEnabled = false;
+  bool _notifyTomorrow = true;
+  bool _notifyUpcoming = true;
+  int _reminderMinutes = 5;
 
   @override
   void initState() {
     super.initState();
     _initBiometricSettings();
+    _loadNotificationSettings();
   }
 
   Future<void> _initBiometricSettings() async {
@@ -107,6 +113,53 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SnackBar(content: Text('Đã hủy kích hoạt đăng nhập sinh trắc học.')),
         );
       }
+    }
+  }
+
+  Future<void> _loadNotificationSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _notifyTomorrow = prefs.getBool('notify_tomorrow') ?? true;
+      _notifyUpcoming = prefs.getBool('notify_upcoming') ?? true;
+      _reminderMinutes = prefs.getInt('reminder_minutes') ?? 5;
+    });
+  }
+
+  Future<void> _toggleNotifyTomorrow(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('notify_tomorrow', value);
+    setState(() {
+      _notifyTomorrow = value;
+    });
+    await _rescheduleAllNotifications();
+  }
+
+  Future<void> _toggleNotifyUpcoming(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('notify_upcoming', value);
+    setState(() {
+      _notifyUpcoming = value;
+    });
+    await _rescheduleAllNotifications();
+  }
+
+  Future<void> _changeReminderMinutes(int minutes) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('reminder_minutes', minutes);
+    setState(() {
+      _reminderMinutes = minutes;
+    });
+    await _rescheduleAllNotifications();
+  }
+
+  Future<void> _rescheduleAllNotifications() async {
+    try {
+      final repo = ApiScheduleRepository(currentUser: widget.profile);
+      final mySchedules = await repo.getMySchedules();
+      final notificationService = NotificationService();
+      await notificationService.updateScheduledNotifications(mySchedules);
+    } catch (e) {
+      print("Lỗi cập nhật lại thông báo: $e");
     }
   }
 
@@ -417,6 +470,149 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
             ),
           ),
+
+        // Notification Settings - Digest Tomorrow
+        Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryLight.withAlpha(22),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.notifications_active,
+                  color: AppColors.primaryLight,
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Báo lịch ngày mai (20:00 hàng ngày)',
+                      style: TextStyle(
+                        color: Theme.of(context).textTheme.bodyLarge?.color ?? const Color(0xFF0F172A),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Nhận tóm tắt lịch công tác của ngày mai vào lúc 8h tối',
+                      style: TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: _notifyTomorrow,
+                onChanged: _toggleNotifyTomorrow,
+                activeColor: AppColors.primaryLight,
+              ),
+            ],
+          ),
+        ),
+
+        // Notification Settings - Upcoming reminders
+        Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withAlpha(22),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.alarm,
+                  color: AppColors.warning,
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Nhắc nhở khi chuẩn bị có lịch',
+                      style: TextStyle(
+                        color: Theme.of(context).textTheme.bodyLarge?.color ?? const Color(0xFF0F172A),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Thông báo nhắc nhở trước khi sự kiện bắt đầu $_reminderMinutes phút',
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 12,
+                      ),
+                    ),
+                    if (_notifyUpcoming) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Text(
+                            'Thời gian báo trước: ',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          ),
+                          DropdownButton<int>(
+                            value: _reminderMinutes,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            underline: Container(),
+                            items: const [
+                              DropdownMenuItem(value: 5, child: Text('5 phút')),
+                              DropdownMenuItem(value: 10, child: Text('10 phút')),
+                              DropdownMenuItem(value: 15, child: Text('15 phút')),
+                              DropdownMenuItem(value: 30, child: Text('30 phút')),
+                              DropdownMenuItem(value: 60, child: Text('1 giờ')),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) {
+                                _changeReminderMinutes(val);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Switch(
+                value: _notifyUpcoming,
+                onChanged: _toggleNotifyUpcoming,
+                activeColor: AppColors.warning,
+              ),
+            ],
+          ),
+        ),
 
         const SizedBox(height: 10),
 
