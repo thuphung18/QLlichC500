@@ -9,3 +9,5 @@ google-generativeai
 python-docx
 openpyxl
 python-multipart
+python-jose[cryptography]
+
