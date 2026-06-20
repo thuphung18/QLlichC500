@@ -1,24 +1,24 @@
 import pyodbc
 from typing import Generator
 
-# Cấu hình kết nối SQL Server
-# Ở đây dùng Trusted_Connection=yes cho Windows Authentication (như đã test local)
-# Bạn có thể thay đổi Driver tuỳ thuộc vào máy, thông dụng là 'ODBC Driver 17 for SQL Server'
-SERVER = 'localhost'
+# Cấu hình kết nối SQL Server từ xa (SQL Server Authentication)
+SERVER = '203.128.246.222,1433'
 DATABASE = 'weekly_schedule_db'
 DRIVER = '{ODBC Driver 17 for SQL Server}' # Đổi thành '{SQL Server}' nếu không có Driver 17
+UID = 'nghiand'
+PWD = '@NangHaNoi2020@'
 
 def get_connection() -> pyodbc.Connection:
     """
-    Tạo và trả về một connection đến SQL Server
+    Tạo và trả về một connection đến SQL Server từ xa
     """
-    connection_string = f"DRIVER={DRIVER};SERVER={SERVER};DATABASE={DATABASE};Trusted_Connection=yes;"
+    connection_string = f"DRIVER={DRIVER};SERVER={SERVER};DATABASE={DATABASE};UID={UID};PWD={PWD};"
     try:
         conn = pyodbc.connect(connection_string)
         return conn
     except pyodbc.Error as e:
         # Nếu lỗi driver, thử fallback sang SQL Server default driver
-        fallback_string = f"DRIVER={{SQL Server}};SERVER={SERVER};DATABASE={DATABASE};Trusted_Connection=yes;"
+        fallback_string = f"DRIVER={{SQL Server}};SERVER={SERVER};DATABASE={DATABASE};UID={UID};PWD={PWD};"
         return pyodbc.connect(fallback_string)
 
 def get_db() -> Generator[pyodbc.Connection, None, None]:
