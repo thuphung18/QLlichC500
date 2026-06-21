@@ -467,8 +467,19 @@ async def import_schedules(file: UploadFile = File(...),
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Import Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        error_msg = str(e)
+        print(f"Import Error: {error_msg}")
+        if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+            raise HTTPException(
+                status_code=429,
+                detail="Tài khoản AI Gemini của bạn đã hết hạn mức sử dụng trong ngày (Free Tier limit 20 requests/ngày). Vui lòng tạo API Key mới hoặc liên kết thẻ thanh toán để nâng hạn mức."
+            )
+        elif "503" in error_msg or "UNAVAILABLE" in error_msg:
+            raise HTTPException(
+                status_code=503,
+                detail="Dịch vụ AI Gemini hiện đang bị quá tải tạm thời từ phía Google. Vui lòng thử lại sau ít phút."
+            )
+        raise HTTPException(status_code=500, detail=f"Lỗi xử lý trích xuất AI: {error_msg}")
 
 
 @router.post("/bulk", response_model=dict)
