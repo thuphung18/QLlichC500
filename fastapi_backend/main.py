@@ -118,7 +118,8 @@ def shutdown_event():
 @app.get("/", tags=["Health Check"])
 def root():
     """Endpoint kiểm tra trạng thái hoạt động của Server."""
-    return {"status": "ok", "message": "QL Lịch Tuần API is running!", "version": "2.0.1 - debug exception"}
+    return {"status": "ok", "message": "QL Lịch Tuần API is running!", "version": "2.0.2 - debug key"}
+
 
 
 @app.get("/health", tags=["Health Check"])
@@ -129,10 +130,16 @@ def health():
       - Trạng thái Database Connection Pool (Số kết nối rảnh rỗi đang có, tổng kết nối vật lý đã tạo, số kết nối đang bị chiếm dụng).
     Thích hợp tích hợp cho các bên thứ ba như Load Balancer, Uptime Monitor.
     """
+    import os
     from cache import schedule_cache, department_cache
     from database import _pool, _total
+    
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    masked_key = f"{gemini_key[:5]}...{gemini_key[-5:]}" if gemini_key else "None"
+    
     return {
         "status": "ok",
+        "gemini_key": masked_key,
         "cache": {
             "schedule_entries": schedule_cache.size(),
             "department_entries": department_cache.size(),
@@ -143,6 +150,7 @@ def health():
             "in_use": _total - _pool.qsize(), # Số kết nối đang phục vụ request
         }
     }
+
 
 # Khởi chạy server uvicorn thủ công nếu file được gọi trực tiếp bằng `python main.py`
 if __name__ == "__main__":
