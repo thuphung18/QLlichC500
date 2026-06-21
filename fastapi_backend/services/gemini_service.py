@@ -309,8 +309,8 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
             return parsed_json
         return []
     except Exception as e:
-        print(f"[Gemini Service] Lỗi xử lý nhóm {group_name}: {e}")
-        return []
+        print(f"Error extracting schedules for {group_name}: {e}")
+        raise e
 
 
 def parse_docx_to_markdown(file_path: str) -> str:
