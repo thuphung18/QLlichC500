@@ -305,13 +305,13 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
                     temperature=0.1
                 )
                 response = _client.models.generate_content(
-                    model='gemini-2.5-flash-lite',
+                    model='gemini-2.5-flash',
                     contents=prompt,
                     config=config
                 )
                 return response.text
             else:
-                model = genai.GenerativeModel('gemini-2.5-flash-lite')
+                model = genai.GenerativeModel('gemini-2.5-flash')
                 response = model.generate_content(
                     prompt,
                     generation_config={"response_mime_type": "application/json", "temperature": 0.1}
