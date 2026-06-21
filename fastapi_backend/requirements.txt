@@ -1,13 +1,36 @@
+# Core API
 fastapi
-uvicorn
+uvicorn[standard]
+
+# Database
 pyodbc
+
+# Validation
 pydantic
+
+# Firebase Push Notifications
 firebase-admin
+
+# Background scheduler
 apscheduler
+
+# PDF extraction
 pymupdf4llm
+pdfplumber
+
+# AI (Google Gemini - new SDK)
+google-genai
 google-generativeai
+
+# Word / Excel
 python-docx
 openpyxl
+
+# File upload support
 python-multipart
+
+# JWT
 python-jose[cryptography]
 
+# Environment variables
+python-dotenv

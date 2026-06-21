@@ -4,13 +4,32 @@ import re
 import asyncio
 import pdfplumber
 import pymupdf4llm
-import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Cấu hình Gemini API
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+# ─────────────────────────────────────────────
+# Cấu hình Gemini API (dùng google-genai mới)
+# ─────────────────────────────────────────────
+try:
+    from google import genai as _genai_new
+    _client = _genai_new.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    _USE_NEW_SDK = True
+except ImportError:
+    # Fallback về SDK cũ nếu chưa cài google-genai
+    import google.generativeai as genai
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    _USE_NEW_SDK = False
+
+
+def _generate_content(model_name: str, prompt: str) -> str:
+    """Gọi Gemini API – tự động chọn SDK đang có."""
+    if _USE_NEW_SDK:
+        response = _client.models.generate_content(model=model_name, contents=prompt)
+        return response.text
+    else:
+        model = genai.GenerativeModel(model_name)
+        return model.generate_content(prompt).text
 
 def parse_pdf_to_text(file_path: str) -> str:
     """Đọc file PDF và trả về toàn bộ text (Legacy)."""
@@ -57,17 +76,13 @@ NỘI DUNG LỊCH CÔNG TÁC:
 {text}
 """
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        response = model.generate_content(prompt)
-        
-        result_text = response.text.strip()
+        result_text = _generate_content('gemini-2.5-flash', prompt).strip()
         if result_text.startswith("```json"):
             result_text = result_text[7:]
         if result_text.startswith("```"):
             result_text = result_text[3:]
         if result_text.endswith("```"):
             result_text = result_text[:-3]
-            
         result_text = result_text.strip()
         parsed_json = json.loads(result_text)
         if isinstance(parsed_json, list):
@@ -229,16 +244,14 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
     try:
         # Chạy đồng bộ SDK Gemini trong Thread Pool bằng asyncio
         loop = asyncio.get_event_loop()
-        
-        # Sử dụng gemini-3.1-flash-lite để có quota lớn và tốc độ siêu tốc (~5s/request)
-        model = genai.GenerativeModel('gemini-3.1-flash-lite')
-        
+
+        # Sử dụng gemini-2.5-flash-lite để có quota lớn và tốc độ siêu tốc
         response = await loop.run_in_executor(
-            None, 
-            lambda: model.generate_content(prompt)
+            None,
+            lambda: _generate_content('gemini-2.5-flash-lite', prompt)
         )
         
-        result_text = response.text.strip()
+        result_text = response.strip() if isinstance(response, str) else response
         
         # Dọn sạch các ký tự bao bọc của code block json nếu có
         if result_text.startswith("```json"):

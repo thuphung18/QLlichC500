@@ -5,10 +5,13 @@ import uuid
 from datetime import datetime
 from database import get_db
 from schemas import ScheduleItem, ScheduleListResponse, CreateScheduleRequest, FormDataResponse, Department, UserCompact
+from cache import schedule_cache, department_cache, make_schedule_key, invalidate_schedules
 
 router = APIRouter(prefix="/api/schedules", tags=["Schedules"])
 
-# ---------- Helper functions ----------
+# ─────────────────────────────────────────────
+# Helper functions
+# ─────────────────────────────────────────────
 
 def row_to_dict(cursor, row):
     if row is None:
@@ -56,76 +59,94 @@ def _is_manager(role: str) -> bool:
 def _can_create_schedule(role: str) -> bool:
     return _is_admin(role) or _is_manager(role)
 
-# ---------- GET Endpoints ----------
+def _fetch_schedules(user_id: str, db, mode: str = "all",
+                     day_index: Optional[int] = None,
+                     keyword: Optional[str] = None) -> List[ScheduleItem]:
+    """Thực hiện truy vấn SP và trả về danh sách lịch."""
+    cursor = db.cursor()
+    try:
+        if day_index is not None:
+            cursor.execute(
+                "EXEC dbo.sp_GetSchedulesForUser @UserId=?, @DayIndex=?",
+                (user_id, day_index)
+            )
+        elif keyword:
+            cursor.execute(
+                "EXEC dbo.sp_GetSchedulesForUser @UserId=?, @Keyword=?",
+                (user_id, keyword)
+            )
+        elif mode != "all":
+            cursor.execute(
+                "EXEC dbo.sp_GetSchedulesForUser @UserId=?, @Mode=?",
+                (user_id, mode)
+            )
+        else:
+            cursor.execute(
+                "EXEC dbo.sp_GetSchedulesForUser @UserId=?",
+                (user_id,)
+            )
+        rows = cursor.fetchall()
+        return [ScheduleItem(**map_schedule_row(row_to_dict(cursor, row))) for row in rows]
+    finally:
+        cursor.close()
+
+# ─────────────────────────────────────────────
+# GET Endpoints (với Cache)
+# ─────────────────────────────────────────────
 
 @router.get("", response_model=List[ScheduleItem])
 def get_all_schedules(user_id: str = "u001", db: pyodbc.Connection = Depends(get_db)):
-    """
-    Lấy toàn bộ lịch theo phân quyền RBAC.
-    - Admin: chỉ thấy Lịch Toàn Trường
-    - Manager: thấy Lịch Toàn Trường + Lịch Phòng ban + Lịch cá nhân phòng mình
-    - User: thấy Lịch Toàn Trường + Lịch Phòng ban mình + Lịch cá nhân của bản thân
-    """
-    cursor = db.cursor()
-    try:
-        cursor.execute("EXEC dbo.sp_GetSchedulesForUser @UserId=?", (user_id,))
-        rows = cursor.fetchall()
-        result = []
-        for row in rows:
-            d = row_to_dict(cursor, row)
-            result.append(ScheduleItem(**map_schedule_row(d)))
-        return result
-    finally:
-        cursor.close()
+    """Lấy toàn bộ lịch theo phân quyền RBAC (có cache 5 phút)."""
+    cache_key = make_schedule_key(user_id, "all")
+    cached = schedule_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    result = _fetch_schedules(user_id, db)
+    schedule_cache.set(cache_key, result)
+    return result
+
 
 @router.get("/day/{day_index}", response_model=List[ScheduleItem])
-def get_schedules_by_day(day_index: int, user_id: str = "u001", db: pyodbc.Connection = Depends(get_db)):
-    """Lấy lịch theo thứ - có phân quyền RBAC."""
-    cursor = db.cursor()
-    try:
-        cursor.execute("EXEC dbo.sp_GetSchedulesForUser @UserId=?, @DayIndex=?", (user_id, day_index))
-        rows = cursor.fetchall()
-        result = []
-        for row in rows:
-            d = row_to_dict(cursor, row)
-            result.append(ScheduleItem(**map_schedule_row(d)))
-        return result
-    finally:
-        cursor.close()
+def get_schedules_by_day(day_index: int, user_id: str = "u001",
+                         db: pyodbc.Connection = Depends(get_db)):
+    """Lấy lịch theo thứ - có phân quyền RBAC (có cache 5 phút)."""
+    cache_key = make_schedule_key(user_id, "day", day_index)
+    cached = schedule_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    result = _fetch_schedules(user_id, db, day_index=day_index)
+    schedule_cache.set(cache_key, result)
+    return result
+
 
 @router.get("/my", response_model=List[ScheduleItem])
 def get_my_schedules(user_id: str = "u001", db: pyodbc.Connection = Depends(get_db)):
-    """Lấy lịch cá nhân - các lịch có tên người dùng trong danh sách tham dự."""
-    cursor = db.cursor()
-    try:
-        cursor.execute("EXEC dbo.sp_GetSchedulesForUser @UserId=?, @Mode=?", (user_id, 'my'))
-        rows = cursor.fetchall()
-        result = []
-        for row in rows:
-            d = row_to_dict(cursor, row)
-            result.append(ScheduleItem(**map_schedule_row(d)))
-        return result
-    finally:
-        cursor.close()
+    """Lấy lịch cá nhân (có cache 5 phút)."""
+    cache_key = make_schedule_key(user_id, "my")
+    cached = schedule_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    result = _fetch_schedules(user_id, db, mode="my")
+    schedule_cache.set(cache_key, result)
+    return result
+
 
 @router.get("/department", response_model=List[ScheduleItem])
-def get_department_schedules(user_id: str = "u001", db: pyodbc.Connection = Depends(get_db)):
-    """
-    Lấy lịch phòng ban.
-    - Manager: thấy toàn bộ lịch phòng ban (kể cả lịch cá nhân các thành viên)
-    - User: chỉ thấy lịch phòng ban chung (không thấy lịch cá nhân của đồng nghiệp)
-    """
-    cursor = db.cursor()
-    try:
-        cursor.execute("EXEC dbo.sp_GetSchedulesForUser @UserId=?, @Mode=?", (user_id, 'department'))
-        rows = cursor.fetchall()
-        result = []
-        for row in rows:
-            d = row_to_dict(cursor, row)
-            result.append(ScheduleItem(**map_schedule_row(d)))
-        return result
-    finally:
-        cursor.close()
+def get_department_schedules(user_id: str = "u001",
+                             db: pyodbc.Connection = Depends(get_db)):
+    """Lấy lịch phòng ban (có cache 5 phút)."""
+    cache_key = make_schedule_key(user_id, "department")
+    cached = schedule_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    result = _fetch_schedules(user_id, db, mode="department")
+    schedule_cache.set(cache_key, result)
+    return result
+
 
 @router.get("/search", response_model=List[ScheduleItem])
 def search_schedules(
@@ -133,26 +154,15 @@ def search_schedules(
     user_id: str = "u001",
     db: pyodbc.Connection = Depends(get_db)
 ):
-    """Tìm kiếm lịch theo từ khoá - có phân quyền RBAC."""
-    cursor = db.cursor()
-    try:
-        cursor.execute("EXEC dbo.sp_GetSchedulesForUser @UserId=?, @Keyword=?", (user_id, keyword))
-        rows = cursor.fetchall()
-        result = []
-        for row in rows:
-            d = row_to_dict(cursor, row)
-            result.append(ScheduleItem(**map_schedule_row(d)))
-        return result
-    finally:
-        cursor.close()
+    """Tìm kiếm lịch theo từ khoá – không cache (kết quả thay đổi liên tục)."""
+    return _fetch_schedules(user_id, db, keyword=keyword)
+
 
 @router.get("/metadata/form-data", response_model=FormDataResponse)
 def get_form_data(user_id: str = "u001", db: pyodbc.Connection = Depends(get_db)):
     """
-    Lấy danh sách Khoa và Users để hiển thị trên Dropdown / Checkbox khi tạo lịch.
-    - Admin: thấy tất cả phòng ban và tất cả users
-    - Manager: thấy tất cả phòng ban, nhưng chỉ thấy users trong phòng mình
-    - User thường: trả về danh sách rỗng (không có quyền tạo lịch)
+    Lấy danh sách Khoa và Users để hiển thị trên Dropdown khi tạo lịch.
+    Có cache 10 phút cho danh sách phòng ban.
     """
     user_info = _get_user_info(user_id, db)
     role = user_info["role"]
@@ -161,54 +171,72 @@ def get_form_data(user_id: str = "u001", db: pyodbc.Connection = Depends(get_db)
     if not _can_create_schedule(role):
         raise HTTPException(status_code=403, detail="Bạn không có quyền tạo lịch")
 
+    # Departments: Admin thấy tất cả, Manager chỉ thấy phòng của mình
+    if _is_manager(role):
+        cursor = db.cursor()
+        cursor.execute("SELECT id, name FROM dbo.departments WHERE id = ?", (dept_id,))
+        row = cursor.fetchone()
+        cursor.close()
+        departments = [Department(id=row[0], name=row[1])] if row else []
+    else:
+        # Admin: cache tất cả phòng ban
+        dept_cache_key = "departments:all"
+        departments = department_cache.get(dept_cache_key)
+        if departments is None:
+            cursor = db.cursor()
+            cursor.execute("SELECT id, name FROM dbo.departments ORDER BY name")
+            departments = [Department(id=row[0], name=row[1]) for row in cursor.fetchall()]
+            cursor.close()
+            department_cache.set(dept_cache_key, departments)
+
+    # Users (không cache vì phân quyền phức tạp theo dept)
     cursor = db.cursor()
     try:
-        cursor.execute("SELECT id, name FROM dbo.departments ORDER BY name")
-        depts = cursor.fetchall()
-        departments = [Department(id=row[0], name=row[1]) for row in depts]
-
-        # Manager chỉ thấy users trong phòng mình để gán công việc
         if _is_manager(role):
             cursor.execute(
                 "SELECT id, full_name, department_id FROM dbo.users WHERE is_active = 1 AND department_id = ?",
                 (dept_id,)
             )
         else:
-            # Admin thấy tất cả users
             cursor.execute("SELECT id, full_name, department_id FROM dbo.users WHERE is_active = 1")
-
         usr_rows = cursor.fetchall()
         users = [UserCompact(id=row[0], fullName=row[1], departmentId=row[2]) for row in usr_rows]
-
         return FormDataResponse(departments=departments, users=users)
     finally:
         cursor.close()
 
+
 @router.get("/{schedule_id}", response_model=ScheduleItem)
-def get_schedule_detail(schedule_id: str, user_id: str = "u001", db: pyodbc.Connection = Depends(get_db)):
+def get_schedule_detail(schedule_id: str, user_id: str = "u001",
+                        db: pyodbc.Connection = Depends(get_db)):
     """Lấy chi tiết một lịch cụ thể."""
+    cache_key = f"sched_detail:{schedule_id}:{user_id}"
+    cached = schedule_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     cursor = db.cursor()
     try:
-        cursor.execute("EXEC dbo.sp_GetScheduleDetail @ScheduleId=?, @UserId=?", (schedule_id, user_id))
+        cursor.execute("EXEC dbo.sp_GetScheduleDetail @ScheduleId=?, @UserId=?",
+                       (schedule_id, user_id))
         row = cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy lịch")
-
-        d = row_to_dict(cursor, row)
-        return ScheduleItem(**map_schedule_row(d))
+        result = ScheduleItem(**map_schedule_row(row_to_dict(cursor, row)))
+        schedule_cache.set(cache_key, result)
+        return result
     finally:
         cursor.close()
 
-# ---------- POST / DELETE Endpoints (RBAC enforced) ----------
+
+# ─────────────────────────────────────────────
+# POST / DELETE Endpoints (ghi + invalidate cache)
+# ─────────────────────────────────────────────
 
 @router.post("", response_model=dict)
-def create_schedule(req: CreateScheduleRequest, user_id: str = "u001", db: pyodbc.Connection = Depends(get_db)):
-    """
-    Tạo lịch mới.
-    - Admin: tạo Lịch Toàn Trường (category phải là 'Lịch toàn trường' hoặc bất kỳ khoa)
-    - Manager: tạo Lịch Phòng ban hoặc Lịch cá nhân (chỉ trong phòng mình)
-    - User thường: bị từ chối (403)
-    """
+def create_schedule(req: CreateScheduleRequest, user_id: str = "u001",
+                    db: pyodbc.Connection = Depends(get_db)):
+    """Tạo lịch mới. Sau khi thành công, xóa toàn bộ schedule cache."""
     user_info = _get_user_info(user_id, db)
     role = user_info["role"]
     user_dept_id = user_info["departmentId"]
@@ -216,50 +244,46 @@ def create_schedule(req: CreateScheduleRequest, user_id: str = "u001", db: pyodb
     if not _can_create_schedule(role):
         raise HTTPException(status_code=403, detail="Bạn không có quyền tạo lịch")
 
-    # Manager chỉ được tạo lịch thuộc phòng mình
     if _is_manager(role) and req.departmentId != user_dept_id:
-        raise HTTPException(status_code=403, detail="Trưởng phòng chỉ được tạo lịch cho phòng ban của mình")
+        raise HTTPException(status_code=403,
+                            detail="Trưởng phòng chỉ được tạo lịch cho phòng ban của mình")
 
     cursor = db.cursor()
     try:
         new_id = str(uuid.uuid4())
-
         dt = datetime.strptime(req.scheduleDate, "%Y-%m-%d")
         day_index = dt.weekday() + 2
         if day_index == 9:
             day_index = 8
 
         h = int(req.startTime.split(":")[0])
-        if h < 12:
-            session = "morning"
-        elif h < 18:
-            session = "afternoon"
-        else:
-            session = "evening"
+        session = "morning" if h < 12 else ("afternoon" if h < 18 else "evening")
 
         days_str = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"]
         date_label = f"{days_str[dt.weekday()]}, {dt.strftime('%d/%m')}"
-
         dept_id = req.departmentId if req.departmentId and req.departmentId.strip() else None
 
         cursor.execute('''
             INSERT INTO dbo.schedules
-            (id, title, teacher, room, schedule_date, date_label, day_index, start_time, end_time, session, note, unit, department_id, category, created_by_user_id)
+            (id, title, teacher, room, schedule_date, date_label, day_index,
+             start_time, end_time, session, note, unit, department_id, category, created_by_user_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (new_id, req.title, req.teacher, req.room, req.scheduleDate, date_label, day_index,
-              req.startTime, req.endTime, session, req.note, req.unit, dept_id, req.category, user_id))
+        ''', (new_id, req.title, req.teacher, req.room, req.scheduleDate, date_label,
+              day_index, req.startTime, req.endTime, session, req.note, req.unit,
+              dept_id, req.category, user_id))
 
         for p_uid in req.participantUserIds:
             cursor.execute("SELECT full_name FROM dbo.users WHERE id = ?", (p_uid,))
             u_row = cursor.fetchone()
             if u_row:
-                p_name = u_row[0]
                 cursor.execute('''
                     INSERT INTO dbo.schedule_participants (schedule_id, participant_name, user_id)
                     VALUES (?, ?, ?)
-                ''', (new_id, p_name, p_uid))
+                ''', (new_id, u_row[0], p_uid))
 
         db.commit()
+        # Xóa cache sau khi ghi thành công
+        invalidate_schedules(req.departmentId)
         return {"success": True, "message": "Thêm lịch thành công", "id": new_id}
     except HTTPException:
         raise
@@ -271,13 +295,9 @@ def create_schedule(req: CreateScheduleRequest, user_id: str = "u001", db: pyodb
 
 
 @router.delete("/{schedule_id}", response_model=dict)
-def delete_schedule(schedule_id: str, user_id: str, db: pyodbc.Connection = Depends(get_db)):
-    """
-    Xoá lịch với phân quyền RBAC:
-    - Admin: chỉ có thể xóa Lịch Toàn Trường (do Admin tạo)
-    - Manager: chỉ có thể xóa lịch thuộc phòng mình (do Manager tạo)
-    - User thường: bị từ chối (403)
-    """
+def delete_schedule(schedule_id: str, user_id: str,
+                    db: pyodbc.Connection = Depends(get_db)):
+    """Xoá lịch với phân quyền RBAC. Sau khi thành công, xóa toàn bộ schedule cache."""
     user_info = _get_user_info(user_id, db)
     role = user_info["role"]
     user_dept_id = user_info["departmentId"]
@@ -287,7 +307,6 @@ def delete_schedule(schedule_id: str, user_id: str, db: pyodbc.Connection = Depe
 
     cursor = db.cursor()
     try:
-        # Lấy thông tin lịch cần xóa
         cursor.execute(
             "SELECT department_id, created_by_user_id FROM dbo.schedules WHERE id = ?",
             (schedule_id,)
@@ -298,12 +317,17 @@ def delete_schedule(schedule_id: str, user_id: str, db: pyodbc.Connection = Depe
 
         schedule_dept_id = str(row[0]) if row[0] else ""
 
-        # Manager chỉ được xóa lịch phòng mình
         if _is_manager(role) and schedule_dept_id != user_dept_id:
-            raise HTTPException(status_code=403, detail="Trưởng phòng chỉ được xóa lịch của phòng mình")
+            raise HTTPException(status_code=403,
+                                detail="Trưởng phòng chỉ được xóa lịch của phòng mình")
 
-        cursor.execute("UPDATE dbo.schedules SET status = 'delete_by_admin' WHERE id = ?", (schedule_id,))
+        cursor.execute(
+            "UPDATE dbo.schedules SET status = 'delete_by_admin' WHERE id = ?",
+            (schedule_id,)
+        )
         db.commit()
+        # Xóa cache sau khi ghi thành công
+        invalidate_schedules(schedule_dept_id)
         return {"success": True, "message": "Xoá lịch thành công"}
     except HTTPException:
         raise
@@ -313,99 +337,98 @@ def delete_schedule(schedule_id: str, user_id: str, db: pyodbc.Connection = Depe
     finally:
         cursor.close()
 
+
 import os
 import shutil
 from fastapi import UploadFile, File
 
 @router.post("/import")
-async def import_schedules(file: UploadFile = File(...), db: pyodbc.Connection = Depends(get_db)):
+async def import_schedules(file: UploadFile = File(...),
+                           db: pyodbc.Connection = Depends(get_db)):
     """
-    Nhận file (PDF, Word, Excel), trích xuất text, và dùng Gemini AI để tạo danh sách lịch (JSON).
-    Chỉ trả về JSON, chưa lưu vào DB.
+    Nhận file (PDF, Word, Excel), trích xuất text và dùng Gemini AI để tạo danh sách lịch.
+    Chỉ trả về JSON preview, chưa lưu vào DB.
     """
     allowed_exts = ['.pdf', '.docx', '.xlsx']
     file_ext = os.path.splitext(file.filename)[1].lower()
     if file_ext not in allowed_exts:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail=f"Hệ thống chỉ hỗ trợ các định dạng: {', '.join(allowed_exts)}"
         )
-        
+
     try:
-        # Lưu file tạm và giữ nguyên đuôi mở rộng để nhận diện định dạng
         temp_file_path = f"temp_{uuid.uuid4()}{file_ext}"
         with open(temp_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-            
-        # Lấy danh sách phòng ban từ DB để AI map
+
         cursor = db.cursor()
         cursor.execute("SELECT id, name FROM dbo.departments")
         departments = [{"id": str(row[0]), "name": row[1]} for row in cursor.fetchall()]
         cursor.close()
-        
-        # Gọi Gemini AI xử lý song song bất đồng bộ (nhận diện theo định dạng file)
+
         from services.gemini_service import extract_schedules_from_file_async
-        schedules_json = await extract_schedules_from_file_async(temp_file_path, file_ext, departments)
-        
-        # Xóa file tạm sau khi hoàn tất xử lý
+        schedules_json = await extract_schedules_from_file_async(
+            temp_file_path, file_ext, departments
+        )
+
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
-            
+
         if not schedules_json:
-            raise HTTPException(status_code=400, detail="Không thể trích xuất lịch công tác từ file PDF hoặc file trống.")
-            
+            raise HTTPException(
+                status_code=400,
+                detail="Không thể trích xuất lịch công tác từ file hoặc file trống."
+            )
         return schedules_json
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Import Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.post("/bulk", response_model=dict)
-def bulk_create_schedules(request: List[CreateScheduleRequest], user_id: str = "u001", db: pyodbc.Connection = Depends(get_db)):
-    """
-    Lưu hàng loạt các lịch sau khi Admin đã xem và xác nhận.
-    """
+def bulk_create_schedules(request: List[CreateScheduleRequest],
+                          user_id: str = "u001",
+                          db: pyodbc.Connection = Depends(get_db)):
+    """Lưu hàng loạt các lịch sau khi Admin đã xem và xác nhận (invalidate cache)."""
     user_info = _get_user_info(user_id, db)
     if not _can_create_schedule(user_info["role"]):
         raise HTTPException(status_code=403, detail="Không có quyền thêm lịch")
-        
+
     cursor = db.cursor()
     success_count = 0
     try:
         for sched in request:
-            # Check quyền tạo lịch ToanTruong
             cat = sched.category
             if cat == "ToanTruong" and not _is_admin(user_info["role"]):
-                continue # Skip những lịch không đủ quyền
-                
+                continue
+
             new_id = str(uuid.uuid4())
-            
-            from datetime import datetime
             dt = datetime.strptime(sched.scheduleDate, "%Y-%m-%d")
             day_index = dt.weekday() + 2
             if day_index == 9:
                 day_index = 8
 
             h = int(sched.startTime.split(":")[0])
-            if h < 12:
-                session = "morning"
-            elif h < 18:
-                session = "afternoon"
-            else:
-                session = "evening"
+            session = "morning" if h < 12 else ("afternoon" if h < 18 else "evening")
 
             days_str = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"]
             date_label = f"{days_str[dt.weekday()]}, {dt.strftime('%d/%m')}"
-            
-            # Xử lý trường hợp AI trả về departmentId là chuỗi rỗng
             dept_id = sched.departmentId if sched.departmentId and sched.departmentId.strip() else None
 
             cursor.execute("""
-                INSERT INTO dbo.schedules (id, title, teacher, room, schedule_date, date_label, day_index, start_time, end_time, session, note, unit, department_id, category, created_by_user_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO dbo.schedules (
+                    id, title, teacher, room, schedule_date, date_label, day_index,
+                    start_time, end_time, session, note, unit, department_id, category, created_by_user_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                new_id, sched.title, sched.teacher, sched.room, sched.scheduleDate, date_label, day_index, sched.startTime, sched.endTime, session, sched.note, sched.unit, dept_id, cat, user_id
+                new_id, sched.title, sched.teacher, sched.room, sched.scheduleDate,
+                date_label, day_index, sched.startTime, sched.endTime, session,
+                sched.note, sched.unit, dept_id, cat, user_id
             ))
-            
+
             if sched.participantUserIds:
                 for p_id in sched.participantUserIds:
                     cursor.execute("""
@@ -413,8 +436,10 @@ def bulk_create_schedules(request: List[CreateScheduleRequest], user_id: str = "
                         VALUES (?, ?)
                     """, (new_id, p_id))
             success_count += 1
-            
+
         db.commit()
+        # Xóa toàn bộ cache sau khi bulk insert
+        invalidate_schedules()
         return {"success": True, "message": f"Đã thêm thành công {success_count} lịch."}
     except Exception as e:
         db.rollback()
