@@ -1,3 +1,11 @@
+# database.py – Quản lý kết nối cơ sở dữ liệu SQL Server thông qua pyodbc và tối ưu hóa hiệu năng bằng Connection Pool tự dựng.
+# 
+# Thiết kế Connection Pool:
+#   - Đảm bảo thread-safe cho môi trường bất đồng bộ của FastAPI (đa luồng).
+#   - Giới hạn số lượng kết nối tối đa (POOL_MAX) tránh làm cạn kiệt tài nguyên hệ thống hoặc SQL Server.
+#   - Tự động kiểm tra trạng thái sống của kết nối trước khi cấp phát (Health-check) và tự tạo mới nếu kết nối bị đứt.
+#   - Giải quyết tình trạng Connection Leak nhờ dependency get_db bọc bằng try-finally đảm bảo luôn trả kết nối về pool.
+
 import os
 import queue
 import threading
@@ -5,10 +13,11 @@ import pyodbc
 from typing import Generator
 from dotenv import load_dotenv
 
+# Tải các biến môi trường từ file .env
 load_dotenv()
 
 # ─────────────────────────────────────────────
-# Cấu hình kết nối SQL Server (đọc từ .env)
+# Cấu hình kết nối SQL Server (đọc từ biến môi trường hoặc fallback mặc định)
 # ─────────────────────────────────────────────
 SERVER   = os.environ.get('DB_SERVER',   '203.128.246.222,1433')
 DATABASE = os.environ.get('DB_DATABASE', 'weekly_schedule_db')
@@ -16,21 +25,22 @@ DRIVER   = os.environ.get('DB_DRIVER',   '{ODBC Driver 17 for SQL Server}')
 UID      = os.environ.get('DB_UID',      'nghiand')
 PWD      = os.environ.get('DB_PWD',      '@NangHaNoi2020@')
 
-# Bật ODBC-level pooling để driver tái sử dụng socket
+# Bật tính năng connection pooling ở tầng driver (ODBC-level pooling) giúp driver tái sử dụng socket bên dưới
 pyodbc.pooling = True
 
 # ─────────────────────────────────────────────
-# Kích thước pool
+# Kích thước Pool (Sử dụng hàng đợi Queue để lưu trữ các kết nối nhàn rỗi)
 # ─────────────────────────────────────────────
-POOL_MIN  = int(os.environ.get('DB_POOL_MIN',  '5'))   # kết nối luôn giữ sẵn trong pool
-POOL_MAX  = int(os.environ.get('DB_POOL_MAX',  '20'))  # tổng kết nối tối đa được phép tồn tại
+POOL_MIN  = int(os.environ.get('DB_POOL_MIN',  '5'))   # Số kết nối duy trì tối thiểu trong pool
+POOL_MAX  = int(os.environ.get('DB_POOL_MAX',  '20'))  # Số kết nối vật lý tối đa được phép tạo ra
 
-_pool:      queue.Queue      = queue.Queue()   # không giới hạn kích thước queue
-_lock:      threading.Lock   = threading.Lock()
-_total:     int              = 0              # tổng kết nối vật lý đã tạo (trong pool + đang dùng)
+_pool:      queue.Queue      = queue.Queue()   # Queue chứa kết nối nhàn rỗi (không giới hạn kích thước queue để tránh block khi put)
+_lock:      threading.Lock   = threading.Lock() # Lock đồng bộ hóa việc thay đổi số lượng kết nối tổng
+_total:     int              = 0               # Tổng số kết nối vật lý hiện đang được quản lý (trong pool + đang sử dụng)
 
 
 def _build_conn_str() -> str:
+    """Tạo chuỗi kết nối (connection string) đến SQL Server."""
     return (
         f"DRIVER={DRIVER};SERVER={SERVER};"
         f"DATABASE={DATABASE};UID={UID};PWD={PWD};"
@@ -39,20 +49,25 @@ def _build_conn_str() -> str:
 
 
 def _new_conn() -> pyodbc.Connection:
-    """Tạo một kết nối vật lý mới, thử fallback nếu driver không tìm thấy."""
+    """
+    Tạo một kết nối vật lý mới đến SQL Server.
+    Nếu driver chỉ định trong cấu hình gặp lỗi, hàm tự động thử kết nối bằng driver cũ để tăng khả năng tương thích.
+    """
     try:
         conn = pyodbc.connect(_build_conn_str())
     except pyodbc.Error:
+        # Cơ chế dự phòng (fallback) nếu hệ thống không cài ODBC Driver 17
         fallback = (
             f"DRIVER={{SQL Server}};SERVER={SERVER};"
             f"DATABASE={DATABASE};UID={UID};PWD={PWD};"
         )
         conn = pyodbc.connect(fallback)
-    conn.autocommit = False
+    conn.autocommit = False  # Tắt chế độ tự động thực thi transaction để quản lý một cách an toàn
     return conn
 
 
 def _is_alive(conn: pyodbc.Connection) -> bool:
+    """Kiểm tra xem kết nối hiện tại còn sống và giao tiếp được với SQL Server không."""
     try:
         conn.execute("SELECT 1")
         return True
@@ -62,25 +77,32 @@ def _is_alive(conn: pyodbc.Connection) -> bool:
 
 def get_connection() -> pyodbc.Connection:
     """
-    Lấy kết nối từ pool.
-    Logic đơn giản & chính xác:
-      1. Thử lấy ngay từ queue (non-blocking).
-      2. Nếu lấy được → kiểm tra còn sống không → dùng.
-      3. Nếu queue rỗng và chưa đạt POOL_MAX → tạo mới.
-      4. Nếu đã đạt POOL_MAX → chờ queue tối đa 15s.
+    Lấy một kết nối từ pool để sử dụng.
+    Quy trình xử lý:
+      1. Thử lấy kết nối nhàn rỗi từ Queue (chế độ non-blocking).
+      2. Nếu lấy được kết nối:
+         - Kiểm tra kết nối còn sống không (health-check).
+         - Nếu còn sống: Trả về kết nối.
+         - Nếu kết nối đã chết: Đóng kết nối, giảm biến đếm _total, tiếp tục quét tìm kết nối khác.
+      3. Nếu Queue rỗng:
+         - Kiểm tra tổng số kết nối đã tạo (_total) xem đã đạt POOL_MAX chưa.
+         - Nếu chưa vượt quá POOL_MAX: Tăng bộ đếm _total và tạo kết nối vật lý mới trả về.
+         - Nếu đã đạt POOL_MAX: Chờ kết nối được trả lại từ các luồng khác vào Queue (chờ tối đa 15 giây).
+         - Hết 15 giây nếu không có kết nối nào rảnh, ném lỗi cạn kiệt kết nối.
     """
     global _total
 
-    # Bước 1: thử lấy ngay từ pool
+    # Bước 1: Thử lấy nhanh kết nối có sẵn trong pool
     while True:
         try:
             conn = _pool.get_nowait()
         except queue.Empty:
-            break   # pool rỗng → sang bước tiếp
+            break   # Pool rỗng, nhảy sang bước tạo mới hoặc chờ đợi
 
         if _is_alive(conn):
             return conn
-        # Kết nối chết → bỏ, giảm bộ đếm, thử tiếp
+            
+        # Kết nối đã chết, giải phóng tài nguyên
         with _lock:
             _total -= 1
         try:
@@ -88,7 +110,7 @@ def get_connection() -> pyodbc.Connection:
         except Exception:
             pass
 
-    # Bước 2: pool rỗng → tạo mới hoặc chờ
+    # Bước 2: Pool rỗng, kiểm tra xem có được phép tạo thêm kết nối vật lý mới không
     with _lock:
         can_create = _total < POOL_MAX
         if can_create:
@@ -102,37 +124,42 @@ def get_connection() -> pyodbc.Connection:
                 _total -= 1
             raise
 
-    # Bước 3: đã đạt giới hạn → chờ kết nối được trả về
+    # Bước 3: Đã đạt giới hạn POOL_MAX, chuyển sang chế độ đợi các luồng khác trả kết nối về pool
     try:
         conn = _pool.get(timeout=15)
         if _is_alive(conn):
             return conn
+            
+        # Kết nối lấy ra từ pool bị hỏng
         with _lock:
             _total -= 1
         try:
             conn.close()
         except Exception:
             pass
-        # Sau khi discard, thử tạo mới
+            
+        # Sau khi loại bỏ kết nối hỏng, cố gắng tạo 1 kết nối mới thay thế ngay
         with _lock:
             _total += 1
         return _new_conn()
     except queue.Empty:
-        raise Exception("DB connection pool exhausted – thử lại sau")
+        raise Exception("DB connection pool exhausted – Không thể tạo thêm hoặc mượn kết nối từ pool. Thử lại sau")
 
 
 def return_connection(conn: pyodbc.Connection):
-    """Trả kết nối về pool để request tiếp theo tái sử dụng."""
+    """
+    Trả kết nối về pool sau khi sử dụng xong để request tiếp theo có thể tái sử dụng.
+    """
     global _total
     try:
-        # Reset trạng thái trước khi trả lại
+        # Hoàn tác (rollback) mọi transaction đang chạy dở để đảm bảo sạch trạng thái kết nối
         try:
-            conn.rollback()   # hủy transaction dở dang (nếu có)
+            conn.rollback()
         except Exception:
             pass
         _pool.put_nowait(conn)
     except queue.Full:
-        # Không nên xảy ra vì queue không giới hạn, nhưng phòng thủ
+        # Trường hợp hy hữu (queue bị lỗi / đầy), thực hiện đóng kết nối và giảm bộ đếm tổng
         with _lock:
             _total -= 1
         try:
@@ -143,23 +170,29 @@ def return_connection(conn: pyodbc.Connection):
 
 def get_db() -> Generator[pyodbc.Connection, None, None]:
     """
-    FastAPI Dependency: inject kết nối vào handler, tự trả về pool sau request.
+    FastAPI Dependency: Cấp phát kết nối database tự động khi gọi controller
+    và đảm bảo LUÔN LUÔN trả kết nối về pool khi request kết thúc nhờ cấu trúc yield trong try-finally.
     """
     conn = get_connection()
     try:
         yield conn
     except Exception:
+        # Nếu luồng API gặp lỗi khi thực hiện query, thực hiện hoàn tác để bảo vệ toàn vẹn dữ liệu
         try:
             conn.rollback()
         except Exception:
             pass
         raise
     finally:
+        # Đảm bảo kết nối luôn được trả về pool dù API thành công hay thất bại (tránh Connection Leak)
         return_connection(conn)
 
 
 def pre_warm_pool(size: int = POOL_MIN):
-    """Tạo sẵn một số kết nối khi server khởi động để giảm latency request đầu tiên."""
+    """
+    Tạo sẵn một lượng kết nối tối thiểu (size) ngay khi ứng dụng FastAPI khởi động.
+    Giúp giảm thiểu độ trễ (latency) của request đầu tiên gửi tới hệ thống.
+    """
     global _total
     warmed = 0
     for _ in range(min(size, POOL_MAX)):
@@ -172,6 +205,7 @@ def pre_warm_pool(size: int = POOL_MIN):
         except Exception as e:
             with _lock:
                 _total -= 1
-            print(f"[Pool] Pre-warm failed: {e}")
+            print(f"[Pool] Khởi tạo kết nối sẵn gặp lỗi: {e}")
             break
-    print(f"[Pool] Pre-warmed {warmed} connections (total={_total})")
+    print(f"[Pool] Đã khởi tạo trước {warmed} kết nối (Tổng số kết nối đang quản lý={_total})")
+

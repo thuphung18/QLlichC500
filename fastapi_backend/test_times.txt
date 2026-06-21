@@ -1,5 +1,0 @@
-('1', datetime.time(6, 30), datetime.time(9, 0))
-('10', datetime.time(15, 30), datetime.time(17, 0))
-('11', datetime.time(9, 0), datetime.time(10, 0))
-('12', datetime.time(7, 30), datetime.time(9, 30))
-('13', datetime.time(14, 0), datetime.time(16, 0))

@@ -1,3 +1,12 @@
+# services/gemini_service.py – Dịch vụ tích hợp Trí tuệ nhân tạo Gemini AI (Google GenAI SDK)
+#
+# Chức năng:
+#   - Hỗ trợ tải tệp PDF/Word/Excel, trích xuất văn bản thô kèm giữ cấu trúc bảng biểu bằng Markdown.
+#   - Tối ưu hóa hiệu năng và quota (Free Tier rate limit):
+#     • Chia nhỏ tài liệu thành 3 nhóm ngày trong tuần (T2-T3, T4-T5, T6-CN).
+#     • Sử dụng model 'gemini-2.5-flash-lite' để phân tích song song đa luồng (bằng asyncio & ThreadPoolExecutor).
+#     • Tự động khớp và ánh xạ tên viết tắt phòng ban được AI tìm thấy sang UUID của cơ sở dữ liệu.
+
 import os
 import json
 import re
@@ -6,24 +15,29 @@ import pdfplumber
 import pymupdf4llm
 from dotenv import load_dotenv
 
+# Tải API key từ môi trường
 load_dotenv()
 
 # ─────────────────────────────────────────────
-# Cấu hình Gemini API (dùng google-genai mới)
+# Cấu hình Gemini SDK Client (Hỗ trợ cả SDK mới và cũ)
 # ─────────────────────────────────────────────
 try:
     from google import genai as _genai_new
+    # Khởi tạo client theo SDK 'google-genai' mới (khuyên dùng)
     _client = _genai_new.Client(api_key=os.getenv("GEMINI_API_KEY"))
     _USE_NEW_SDK = True
 except ImportError:
-    # Fallback về SDK cũ nếu chưa cài google-genai
+    # Cơ chế dự phòng (fallback) nếu hệ thống chỉ cài SDK 'google-generativeai' cũ
     import google.generativeai as genai
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
     _USE_NEW_SDK = False
 
 
 def _generate_content(model_name: str, prompt: str) -> str:
-    """Gọi Gemini API – tự động chọn SDK đang có."""
+    """
+    Thực hiện gửi yêu cầu tạo nội dung (generate content) đến Gemini API,
+    tự động chọn cú pháp phù hợp với phiên bản SDK đang chạy.
+    """
     if _USE_NEW_SDK:
         response = _client.models.generate_content(model=model_name, contents=prompt)
         return response.text
@@ -31,8 +45,12 @@ def _generate_content(model_name: str, prompt: str) -> str:
         model = genai.GenerativeModel(model_name)
         return model.generate_content(prompt).text
 
+
 def parse_pdf_to_text(file_path: str) -> str:
-    """Đọc file PDF và trả về toàn bộ text (Legacy)."""
+    """
+    [Legacy] Trích xuất văn bản thô từ file PDF sử dụng thư viện pdfplumber.
+    (Không giữ được định dạng bảng tốt bằng các cơ chế chuyển sang Markdown mới).
+    """
     text = ""
     try:
         with pdfplumber.open(file_path) as pdf:
@@ -41,12 +59,14 @@ def parse_pdf_to_text(file_path: str) -> str:
                 if page_text:
                     text += page_text + "\n"
     except Exception as e:
-        print(f"Error reading PDF: {e}")
+        print(f"[Gemini Service] Lỗi đọc PDF sang Text: {e}")
     return text
+
 
 def extract_schedules_from_text(text: str, departments: list) -> list:
     """
-    Gửi nội dung chữ lên Gemini để bóc tách thành danh sách JSON (Legacy/Đồng bộ).
+    [Legacy/Đồng bộ] Gửi trực tiếp toàn bộ văn bản thô lên Gemini để bóc tách lịch dạng JSON.
+    (Ít dùng hơn phương pháp xử lý song song phân chia theo nhóm ngày mới).
     """
     dept_info = json.dumps(departments, ensure_ascii=False)
     prompt = f"""
@@ -77,6 +97,7 @@ NỘI DUNG LỊCH CÔNG TÁC:
 """
     try:
         result_text = _generate_content('gemini-2.5-flash', prompt).strip()
+        # Dọn dẹp thẻ bao bọc markdown ```json ... ```
         if result_text.startswith("```json"):
             result_text = result_text[7:]
         if result_text.startswith("```"):
@@ -89,24 +110,31 @@ NỘI DUNG LỊCH CÔNG TÁC:
             return parsed_json
         return []
     except Exception as e:
-        print(f"Gemini API Error: {e}")
+        print(f"[Gemini Service] Lỗi gọi API Gemini: {e}")
         return []
 
-# ==================== PHẦN MỚI: TỐI ƯU SONG SONG MARKDOWN ====================
+
+# ─────────────────────────────────────────────────────────────────
+# Tối ưu hóa xử lý song song & Chuyển đổi Markdown nâng cao
+# ─────────────────────────────────────────────────────────────────
 
 def find_matching_department_id(dept_keyword: str, departments: list) -> str:
-    """Ánh xạ tên phòng ban từ AI trích xuất sang mã UUID tương ứng trong cơ sở dữ liệu."""
+    """
+    Thuật toán ánh xạ thông minh:
+    Nhận diện từ khóa viết tắt phòng ban do AI trích xuất (ví dụ: "QLĐT", "HC", "NV1") 
+    và khớp nó với danh sách phòng ban trong hệ thống để lấy đúng mã UUID.
+    """
     if not dept_keyword or not isinstance(dept_keyword, str):
         return ""
     clean_kw = dept_keyword.strip().lower()
     
-    # 1. Khớp trực tiếp (ví dụ: "QLĐT" nằm trong "Quản lý đào tạo (QLĐT)")
+    # 1. So khớp trực tiếp (Ví dụ: "qldt" có nằm trong "Phòng Quản lý đào tạo (QLĐT)")
     for dept in departments:
         dept_name = dept["name"].lower()
         if clean_kw in dept_name:
             return dept["id"]
             
-    # 2. Khớp ký tự viết tắt (ví dụ: "hc" -> "hành chính")
+    # 2. So khớp ký tự đầu viết tắt (Ví dụ: "hc" -> "hành chính")
     for dept in departments:
         dept_name = dept["name"].lower()
         words = dept_name.split()
@@ -114,13 +142,13 @@ def find_matching_department_id(dept_keyword: str, departments: list) -> str:
         if clean_kw == initials:
             return dept["id"]
             
-    # 3. Khớp từ khóa cụ thể trong tên
+    # 3. So khớp ngược từ hoặc chứa từ khóa
     for dept in departments:
         dept_name = dept["name"].lower()
         if clean_kw in dept_name or dept_name in clean_kw:
             return dept["id"]
             
-    # 4. Fallback về Quản lý đào tạo hoặc Hành chính
+    # 4. Cơ chế dự phòng mặc định (Fallback)
     for dept in departments:
         name_lower = dept["name"].lower()
         if "đào tạo" in name_lower or "qldt" in name_lower:
@@ -130,51 +158,53 @@ def find_matching_department_id(dept_keyword: str, departments: list) -> str:
         if "hành chính" in name_lower or "hc" in name_lower:
             return dept["id"]
             
+    # Trả về ID đầu tiên nếu không khớp được bất kỳ quy tắc nào
     return departments[0]["id"] if departments else ""
 
+
 def parse_pdf_to_markdown(file_path: str) -> str:
-    """Chuyển đổi file PDF sang Markdown giữ nguyên định dạng bảng biểu."""
+    """
+    Chuyển đổi tệp PDF sang định dạng Markdown.
+    Sử dụng pymupdf4llm để bóc tách bảng biểu (tables) nguyên vẹn cấu trúc lưới.
+    """
     try:
-        # Sử dụng pymupdf4llm để bóc tách Markdown Table cực tốt
         return pymupdf4llm.to_markdown(file_path)
     except Exception as e:
-        print(f"Error parsing PDF to Markdown: {e}")
-        # Fallback về pdfplumber nếu pymupdf4llm gặp lỗi
+        print(f"[Gemini Service] pymupdf4llm gặp lỗi, tự động chuyển về pdfplumber: {e}")
         return parse_pdf_to_text(file_path)
+
 
 def split_markdown_by_days(md_text: str) -> dict:
     """
-    Tách nội dung Markdown lịch theo các Thứ trong tuần.
-    Trả về dict dạng: {"Thứ Hai": "nội dung...", "Thứ Ba": "nội dung..."}
+    Phân tích văn bản lịch và chia nhỏ thành từng đoạn văn bản tương ứng với từng Thứ trong tuần.
+    Trả về: dict {"Thứ Hai": "nội dung...", "Thứ Ba": "nội dung..."}
     """
-    # Các mốc thứ thông dụng để cắt nhỏ
     days = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật", 
             "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"]
     
-    # Tìm kiếm các tiêu đề ngày trong Markdown sử dụng Regex
+    # Sử dụng Regex tìm kiếm mốc biên giới là các tiêu đề Thứ
     pattern = r"(?i)(" + "|".join([re.escape(day) for day in days]) + r")"
     matches = list(re.finditer(pattern, md_text))
     
     if not matches:
-        # Không tìm thấy mốc Thứ nào, giữ nguyên cả cục
         return {"Toàn bộ lịch": md_text}
     
     chunks = {}
     for i in range(len(matches)):
         start = matches[i].start()
-        # Vị trí kết thúc là điểm bắt đầu của ngày tiếp theo, hoặc hết chuỗi
         end = matches[i+1].start() if i + 1 < len(matches) else len(md_text)
         day_name = matches[i].group(0)
         chunks[day_name] = md_text[start:end]
         
     return chunks
 
+
 def split_markdown_into_groups(md_text: str) -> dict:
     """
-    Tách lịch và gộp thành 3 nhóm để tránh giới hạn rate limit 5 RPM của Gemini API free tier.
-    - Nhóm 1: Thứ 2 và Thứ 3.
-    - Nhóm 2: Thứ 4 và Thứ 5.
-    - Nhóm 3: Thứ 6, Thứ 7, Chủ Nhật.
+    Gộp các ngày lại thành 3 nhóm xử lý chính nhằm tránh chạm giới hạn Rate Limit (5 RPM) của API Key miễn phí:
+      - Nhóm 1: Thứ 2 và Thứ 3.
+      - Nhóm 2: Thứ 4 và Thứ 5.
+      - Nhóm 3: Thứ 6, 7 và Chủ Nhật.
     """
     chunks = split_markdown_by_days(md_text)
     
@@ -193,7 +223,6 @@ def split_markdown_into_groups(md_text: str) -> dict:
         "thứ 6": "Nhóm 3 (Thứ 6 - Chủ Nhật)",
         "thứ bảy": "Nhóm 3 (Thứ 6 - Chủ Nhật)",
         "thứ 7": "Nhóm 3 (Thứ 6 - Chủ Nhật)",
-        "chủ nhật": "Nhóm 3 (Thứ 6 - Chủ Nhật)",
         "chủ nhật": "Nhóm 3 (Thứ 6 - Chủ Nhật)"
     }
     
@@ -212,15 +241,19 @@ def split_markdown_into_groups(md_text: str) -> dict:
         if matched_group:
             groups[matched_group] += content + "\n"
         else:
-            # Fallback nếu tên ngày lạ, gộp vào Nhóm 1
+            # Nếu không tìm thấy thứ hợp lệ, gộp tạm vào Nhóm 1
             groups["Nhóm 1 (Thứ 2 - Thứ 3)"] += content + "\n"
             
     # Lọc bỏ các nhóm rỗng
     return {k: v for k, v in groups.items() if v.strip()}
 
+
 async def extract_single_chunk(group_name: str, chunk_text: str, departments: list) -> list:
-    """Gọi Gemini xử lý song song trong Thread Pool để tránh blocking luồng chính."""
-    
+    """
+    Gửi một nhóm văn bản lên Gemini xử lý.
+    Sử dụng model 'gemini-2.5-flash-lite' để có tốc độ phản hồi nhanh nhất và hạn mức gọi API tốt nhất.
+    Chạy bất đồng bộ thông qua run_in_executor để tránh block thread xử lý chính.
+    """
     prompt = f"""
 Bạn là một trợ lý AI phân tích lịch công tác. Nhiệm vụ của bạn là đọc nội dung lịch dưới đây (dạng Markdown) và trích xuất thành danh sách các object JSON rút gọn.
 
@@ -242,10 +275,8 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
 {chunk_text}
 """
     try:
-        # Chạy đồng bộ SDK Gemini trong Thread Pool bằng asyncio
         loop = asyncio.get_event_loop()
-
-        # Sử dụng gemini-2.5-flash-lite để có quota lớn và tốc độ siêu tốc
+        # Chạy gọi API đồng bộ trong ThreadPoolExecutor của asyncio
         response = await loop.run_in_executor(
             None,
             lambda: _generate_content('gemini-2.5-flash-lite', prompt)
@@ -253,7 +284,7 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
         
         result_text = response.strip() if isinstance(response, str) else response
         
-        # Dọn sạch các ký tự bao bọc của code block json nếu có
+        # Dọn dẹp thẻ code block
         if result_text.startswith("```json"):
             result_text = result_text[7:]
         if result_text.startswith("```"):
@@ -265,53 +296,63 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
         parsed_json = json.loads(result_text)
         
         if isinstance(parsed_json, list):
-            # Hậu xử lý trên Python để điền các trường mặc định và map department UUID
+            # Điền các giá trị mặc định của hệ thống sau khi trích xuất
             for item in parsed_json:
                 item["unit"] = "Học viện ANND"
                 item["category"] = "ToanTruong"
                 item["participantUserIds"] = []
                 
-                # Ánh xạ tên phòng ban sang UUID
+                # Thực hiện ánh xạ trường 'department' từ chuỗi thô sang UUID của database
                 dept_name = item.pop("department", "")
                 item["departmentId"] = find_matching_department_id(dept_name, departments)
                 
             return parsed_json
         return []
     except Exception as e:
-        print(f"Error extracting schedules for {group_name}: {e}")
+        print(f"[Gemini Service] Lỗi xử lý nhóm {group_name}: {e}")
         return []
 
+
 def parse_docx_to_markdown(file_path: str) -> str:
-    """Chuyển đổi file Word (.docx) sang Markdown bao gồm cả bảng biểu."""
+    """
+    Chuyển đổi tệp Word (.docx) sang văn bản định dạng Markdown.
+    Duyệt tuần tự qua các Paragraph và Table để chuyển sang cú pháp Markdown lưới.
+    """
     try:
         import docx
         doc = docx.Document(file_path)
         content = []
         
-        # Duyệt tuần tự các phần tử (đoạn văn & bảng biểu) trong body của tài liệu
+        # Duyệt qua cây tài liệu XML
         for block in doc.element.body:
             name = block.tag.split('}')[-1]
             if name == 'p':
+                # Xử lý đoạn văn
                 p = docx.text.paragraph.Paragraph(block, doc)
                 if p.text.strip():
                     content.append(p.text.strip())
             elif name == 'tbl':
+                # Xử lý bảng biểu
                 table = docx.table.Table(block, doc)
                 table_md = []
                 for r_idx, row in enumerate(table.rows):
                     row_cells = [cell.text.strip().replace("\n", " ") for cell in row.cells]
                     table_md.append(f"| {' | '.join(row_cells)} |")
                     if r_idx == 0:
+                        # Thêm hàng gạch ngăn cách đầu bảng
                         separators = ["---"] * len(row_cells)
                         table_md.append(f"| {' | '.join(separators)} |")
                 content.append("\n".join(table_md) + "\n")
         return "\n".join(content)
     except Exception as e:
-        print(f"Error parsing Word (.docx) to Markdown: {e}")
+        print(f"[Gemini Service] Lỗi chuyển Word (.docx) sang Markdown: {e}")
         return ""
 
+
 def parse_xlsx_to_markdown(file_path: str) -> str:
-    """Chuyển đổi file Excel (.xlsx) sang Markdown Table."""
+    """
+    Chuyển đổi bảng tính Excel (.xlsx) sang Markdown Table để gửi cho AI.
+    """
     try:
         import openpyxl
         wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
@@ -320,10 +361,10 @@ def parse_xlsx_to_markdown(file_path: str) -> str:
         
         table_md = []
         for r_idx, row in enumerate(sheet.iter_rows(values_only=True)):
-            # Chuyển các cell None thành chuỗi rỗng và lọc bỏ ký tự xuống dòng
+            # Chuyển đổi dữ liệu các cell sang String và dọn dẹp ký tự xuống dòng
             row_cells = [str(cell).strip().replace("\n", " ") if cell is not None else "" for cell in row]
             
-            # Bỏ qua các dòng trống hoàn toàn
+            # Bỏ qua dòng trống hoàn toàn
             if not any(row_cells):
                 continue
                 
@@ -336,11 +377,19 @@ def parse_xlsx_to_markdown(file_path: str) -> str:
         wb.close()
         return "\n".join(content)
     except Exception as e:
-        print(f"Error parsing Excel (.xlsx) to Markdown: {e}")
+        print(f"[Gemini Service] Lỗi chuyển Excel (.xlsx) sang Markdown: {e}")
         return ""
 
+
 async def extract_schedules_from_file_async(file_path: str, file_ext: str, departments: list) -> list:
-    """Hàm chính điều phối: Trích xuất nội dung tùy định dạng -> Phân tách theo Thứ -> Nhóm 3 luồng song song -> Gộp kết quả."""
+    """
+    HÀM ĐIỀU PHỐI CHÍNH (Đồng thời bất đồng bộ):
+      1. Nhận diện định dạng tệp và chuyển đổi cấu trúc sang Markdown.
+      2. Phân chia nội dung Markdown thành các nhóm ngày nhỏ hơn để tránh Rate Limit.
+      3. Kích hoạt xử lý song song đồng thời (asyncio.gather) gửi các yêu cầu lên Gemini API.
+      4. Thu thập và hợp nhất danh sách lịch công tác trả về.
+    """
+    # 1. Chuyển đổi định dạng tệp sang Markdown
     if file_ext == '.pdf':
         md_text = parse_pdf_to_markdown(file_path)
     elif file_ext == '.docx':
@@ -348,28 +397,29 @@ async def extract_schedules_from_file_async(file_path: str, file_ext: str, depar
     elif file_ext == '.xlsx':
         md_text = parse_xlsx_to_markdown(file_path)
     else:
-        print(f"Unsupported file extension: {file_ext}")
+        print(f"[Gemini Service] Định dạng file không hỗ trợ: {file_ext}")
         return []
         
     if not md_text or not md_text.strip():
-        print("Empty text extracted from file.")
+        print("[Gemini Service] Không trích xuất được nội dung chữ từ file.")
         return []
         
-    # Phân tách và gộp nội dung lịch thành 3 nhóm (Tránh rate limit 5 RPM)
+    # 2. Phân nhóm ngày
     groups = split_markdown_into_groups(md_text)
     
-    # Tạo danh sách task chạy song song bằng asyncio (Tối đa 3 tasks concurrent)
+    # 3. Tạo danh sách các task xử lý đồng thời bất đồng bộ
     tasks = []
     for group_name, chunk_content in groups.items():
         tasks.append(extract_single_chunk(group_name, chunk_content, departments))
         
-    # Thực thi song song và chờ tất cả hoàn thành
+    # Kích hoạt thực thi đồng thời và chờ đợi kết quả
     results = await asyncio.gather(*tasks)
     
-    # Gộp danh sách lịch từ các nhóm ngày
+    # 4. Hợp nhất kết quả từ các luồng gửi về
     all_schedules = []
     for group_schedules in results:
         all_schedules.extend(group_schedules)
         
     return all_schedules
+
 

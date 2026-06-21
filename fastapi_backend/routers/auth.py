@@ -1,3 +1,12 @@
+# routers/auth.py – Phân hệ Xác thực & Cấp quyền (Authentication & Authorization).
+#
+# Các chức năng chính:
+#   - Đăng nhập hệ thống (Sinh Access Token & Refresh Token bằng JWT).
+#   - Đăng xuất hoặc Làm mới phiên đăng nhập (Refresh Token).
+#   - Đảm bảo Single Session (Mỗi tài khoản chỉ hoạt động trên một thiết bị tại một thời điểm).
+#   - Quên mật khẩu & Đặt lại mật khẩu qua email xác thực OTP 6 số.
+#   - Cập nhật Firebase Cloud Messaging (FCM) Token cho thiết bị nhận thông báo đẩy.
+
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 import random
 import uuid
@@ -19,46 +28,57 @@ from jose import jwt, JWTError
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
+
 def row_to_dict(cursor, row):
     """
-    Chuyá»ƒn Ä‘á»•i má»™t row cá»§a pyodbc thÃ nh dictionary
+    Chuyển đổi kết quả một hàng (row) trả về từ thư viện pyodbc thành cấu trúc dictionary.
+    Giúp ánh xạ dữ liệu cột từ cơ sở dữ liệu sang dạng khóa-giá trị dễ xử lý.
     """
     if row is None:
         return None
+    # Lấy tên các cột từ mô tả của cursor
     columns = [column[0] for column in cursor.description]
     return dict(zip(columns, row))
+
 
 @router.post("/login", response_model=LoginResponse)
 def login(request: LoginRequest, db: pyodbc.Connection = Depends(get_db)):
     """
-    ÄÄƒng nháº­p ngÆ°á»i dÃ¹ng.
-    Gá»i stored procedure sp_LoginUser.
+    Đăng nhập người dùng bằng tài khoản và mật khẩu.
+    
+    Quy trình hoạt động:
+      1. Gọi Stored Procedure dbo.sp_LoginUser với tham số Username và Password.
+      2. Nếu không tìm thấy kết quả khớp, ném lỗi 401 Unauthorized.
+      3. Sinh cặp Token JWT mới: Access Token (hạn ngắn) và Refresh Token (hạn dài).
+      4. Lưu trữ Refresh Token mới xuống cơ sở dữ liệu để thực thi cơ chế Single Session.
+      5. Trả về Token và Thông tin cá nhân của người dùng.
     """
     cursor = db.cursor()
     try:
-        # Gá»i Stored Procedure
+        # Thực hiện gọi Stored Procedure để xác thực thông tin đăng nhập
         cursor.execute("EXEC dbo.sp_LoginUser @Username=?, @Password=?", (request.username, request.password))
         row = cursor.fetchone()
         
         if not row:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="TÃ i khoáº£n hoáº·c máº­t kháº©u khÃ´ng chÃ­nh xÃ¡c"
+                detail="Tài khoản hoặc mật khẩu không chính xác"
             )
             
         user_dict = row_to_dict(cursor, row)
         
-        # Mapping cÃ¡c trÆ°á» ng cho phÃ¹ há»£p vá»›i UserProfile schema
-        # LÆ°u Ã½: Náº¿u SP khÃ´ng tráº£ vá»  avatarUrl, ta gÃ¡n None
+        # Đảm bảo trường avatarUrl tồn tại trong dictionary (gán None nếu SP không trả về)
         if 'avatarUrl' not in user_dict:
             user_dict['avatarUrl'] = None
             
-        # Táº¡o jwt tokens
         user_id = str(user_dict['id'])
+        
+        # Tạo mã Access Token (chứa Sub và Role) và Refresh Token
         access_token = create_access_token(data={"sub": user_id, "role": user_dict.get('role', '')})
         refresh_token = create_refresh_token(data={"sub": user_id})
         
-        # Save refresh_token into db (single session)
+        # Cập nhật Refresh Token vào bảng users trong DB.
+        # Phục vụ cho cơ chế Single Session: Khi đăng nhập ở thiết bị mới, thiết bị cũ sẽ bị đăng xuất do Refresh Token trong DB thay đổi.
         cursor.execute("UPDATE dbo.users SET refresh_token = ? WHERE id = ?", (refresh_token, user_id))
         db.commit()
             
@@ -78,44 +98,46 @@ def login(request: LoginRequest, db: pyodbc.Connection = Depends(get_db)):
 @router.post("/forgot-password/send", response_model=SendResetCodeResponse)
 def send_reset_code(request: SendResetCodeRequest, background_tasks: BackgroundTasks, db: pyodbc.Connection = Depends(get_db)):
     """
-    BƯỚC 1: Gửi mã OTP xác nhận quên mật khẩu đến email của người dùng.
+    BƯỚC 1: Quên mật khẩu - Gửi mã xác thực OTP qua email.
+    
+    Quy trình hoạt động:
+      1. Tìm kiếm người dùng dựa trên thông tin liên lạc (email) qua Stored Procedure sp_FindUserByContact.
+      2. Nếu tài khoản không tồn tại, trả về kết quả thất bại.
+      3. Sinh mã OTP ngẫu nhiên gồm 6 chữ số và mã UUID định danh phiên gửi.
+      4. Lưu thông tin OTP vào bảng password_reset_codes (có thời gian hết hạn là 5 phút).
+      5. Che bớt ký tự email để đảm bảo bảo mật khi hiển thị trên ứng dụng.
+      6. Đẩy tác vụ gửi email chứa OTP vào BackgroundTask để tối ưu phản hồi API.
     """
     cursor = db.cursor()
     try:
-        # 1. Tìm kiếm người dùng trong cơ sở dữ liệu dựa trên email hoặc số điện thoại (contact)
-        # Sử dụng Stored Procedure sp_FindUserByContact để tìm chính xác tài khoản.
+        # Tìm kiếm người dùng dựa trên thông tin email liên hệ
         cursor.execute("EXEC dbo.sp_FindUserByContact @Contact=?", (request.contact,))
         row = cursor.fetchone()
         
-        # Nếu không có dòng nào được trả về, nghĩa là email chưa được đăng ký trong hệ thống
         if not row:
              return SendResetCodeResponse(
                  success=False,
                  message="Không tìm thấy tài khoản với thông tin liên lạc này"
              )
         
-        # Lấy ID của người dùng từ kết quả truy vấn
         user_id = row[0]
         
-        # 2. Tạo mã OTP ngẫu nhiên gồm 6 chữ số
+        # Tạo mã OTP ngẫu nhiên 6 chữ số
         otp_code = str(random.randint(100000, 999999))
         code_id = str(uuid.uuid4())
         
-        # 3. Lưu trữ mã OTP này vào bảng password_reset_codes
-        # Đặt thời gian hết hạn là 5 phút (DATEADD(minute, 5, GETDATE()))
-        # Trạng thái ban đầu: chưa xác thực (is_verified = 0) và chưa sử dụng (is_used = 0)
+        # Lưu thông tin mã xác thực vào cơ sở dữ liệu (thời hạn 5 phút kể từ thời điểm tạo)
         cursor.execute('''
             INSERT INTO dbo.password_reset_codes 
             (id, user_id, contact, otp_code, expires_at, created_at, is_verified, is_used)
             VALUES (?, ?, ?, ?, DATEADD(minute, 5, GETDATE()), GETDATE(), 0, 0)
         ''', (code_id, user_id, request.contact, otp_code))
-        db.commit() # Xác nhận lưu vào Database
+        db.commit()
 
-        # 4. Che bớt một phần email để hiển thị an toàn trên màn hình (Ví dụ: thup***com)
+        # Tạo chuỗi masked email để phản hồi bảo mật cho client (Ví dụ: exam***.com)
         masked = request.contact[:4] + "***" + request.contact[-3:] if len(request.contact) > 6 else "***"
         
-        # 5. Gửi email chứa mã OTP ở dưới nền (background_tasks)
-        # Việc này giúp API phản hồi ngay lập tức mà không phải chờ quá trình gửi mail (thường mất vài giây)
+        # Đăng ký tác vụ gửi email chạy ngầm, tránh block luồng phản hồi của API chính
         background_tasks.add_task(send_otp_email, request.contact, otp_code)
         
         return SendResetCodeResponse(
@@ -124,22 +146,27 @@ def send_reset_code(request: SendResetCodeRequest, background_tasks: BackgroundT
             maskedContact=masked
         )
     except Exception as e:
-        db.rollback() # Hoàn tác nếu có lỗi
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         cursor.close()
 
+
 @router.post("/forgot-password/verify", response_model=VerifyResetCodeResponse)
 def verify_reset_code(request: VerifyResetCodeRequest, db: pyodbc.Connection = Depends(get_db)):
     """
-    BƯỚC 2: Kiểm tra tính hợp lệ của mã OTP mà người dùng nhập vào.
+    BƯỚC 2: Quên mật khẩu - Xác thực mã OTP người dùng nhập vào.
+    
+    Quy trình hoạt động:
+      1. Truy vấn mã xác thực trong database khớp với thông tin: email, mã OTP, chưa được xác thực, chưa sử dụng và chưa hết hạn.
+      2. Nếu không tìm thấy bản ghi hợp lệ, trả về thông báo lỗi.
+      3. Sinh một token dùng một lần (reset_token) đại diện cho quyền đặt lại mật khẩu.
+      4. Cập nhật trạng thái của mã OTP thành đã xác thực (is_verified = 1) và gắn kèm reset_token.
+      5. Trả về reset_token cho ứng dụng client để chuyển tiếp sang Bước 3.
     """
     cursor = db.cursor()
     try:
-        # 1. Truy vấn mã OTP trong Database để kiểm tra các điều kiện:
-        # - Đúng địa chỉ liên hệ (contact) và đúng mã OTP người dùng nhập.
-        # - Mã chưa từng được xác thực (is_verified = 0) và chưa được dùng để đổi pass (is_used = 0).
-        # - Thời gian hiện tại chưa vượt quá thời gian hết hạn của mã (expires_at > GETDATE()).
+        # Kiểm tra tính hợp lệ của mã OTP
         cursor.execute('''
             SELECT id, user_id 
             FROM dbo.password_reset_codes 
@@ -149,7 +176,6 @@ def verify_reset_code(request: VerifyResetCodeRequest, db: pyodbc.Connection = D
         ''', (request.contact, request.code))
         row = cursor.fetchone()
         
-        # Nếu không tìm thấy hoặc sai điều kiện (VD: quá hạn), báo lỗi
         if not row:
             return VerifyResetCodeResponse(
                 success=False,
@@ -157,11 +183,10 @@ def verify_reset_code(request: VerifyResetCodeRequest, db: pyodbc.Connection = D
             )
             
         code_id = row[0]
-        # 2. Sinh ra một "chìa khóa tạm thời" (reset_token) để dùng cho bước đổi mật khẩu tiếp theo
+        # Tạo khóa tạm thời reset_token cho bước đặt lại mật khẩu tiếp theo
         reset_token = str(uuid.uuid4())
         
-        # 3. Cập nhật trạng thái của mã OTP này thành "đã xác thực" (is_verified = 1) 
-        # và lưu lại thời gian xác thực cùng với chìa khóa tạm (reset_token)
+        # Cập nhật trạng thái bản ghi OTP
         cursor.execute('''
             UPDATE dbo.password_reset_codes 
             SET is_verified = 1, verified_at = GETDATE(), reset_token = ?
@@ -169,7 +194,6 @@ def verify_reset_code(request: VerifyResetCodeRequest, db: pyodbc.Connection = D
         ''', (reset_token, code_id))
         db.commit()
         
-        # 4. Trả về resetToken cho ứng dụng. App sẽ giữ token này để tiến hành đổi pass ở bước 3.
         return VerifyResetCodeResponse(
             success=True,
             message="Xác thực thành công",
@@ -181,16 +205,20 @@ def verify_reset_code(request: VerifyResetCodeRequest, db: pyodbc.Connection = D
     finally:
         cursor.close()
 
+
 @router.post("/forgot-password/reset", response_model=ResetPasswordResponse)
 def reset_password(request: ResetPasswordRequest, db: pyodbc.Connection = Depends(get_db)):
     """
-    BƯỚC 3: Đặt lại mật khẩu mới dựa trên khóa (reset_token) lấy từ bước 2.
+    BƯỚC 3: Quên mật khẩu - Cập nhật mật khẩu mới bằng reset_token.
+    
+    Quy trình hoạt động:
+      1. Truy vấn bản ghi OTP theo reset_token (kiểm tra token còn hạn, đã được xác thực nhưng chưa từng sử dụng).
+      2. Cập nhật mật khẩu mới vào bảng users.
+      3. Đánh dấu reset_token này đã sử dụng (is_used = 1) để tránh việc tấn công replay attack (sử dụng lại token).
     """
     cursor = db.cursor()
     try:
-        # 1. Tra cứu lại bản ghi chứa reset_token để tìm user_id tương ứng
-        # Cần phải đảm bảo token hợp lệ, đã xác thực OTP (is_verified = 1) và CHƯA SỬ DỤNG (is_used = 0)
-        # Token này cũng cần phải chưa hết hạn theo thời gian được cấu hình (expires_at)
+        # Kiểm tra sự hợp lệ của reset_token
         cursor.execute('''
             SELECT id, user_id 
             FROM dbo.password_reset_codes 
@@ -209,23 +237,21 @@ def reset_password(request: ResetPasswordRequest, db: pyodbc.Connection = Depend
         code_id = row[0]
         user_id = row[1]
         
-        # 2. Cập nhật mật khẩu mới của người dùng vào bảng users
-        # Ở đây đang dùng mật khẩu plain text (tuy nhiên thực tế nên hash mật khẩu trước khi lưu)
+        # Cập nhật mật khẩu mới cho người dùng
         cursor.execute('''
             UPDATE dbo.users 
             SET password_hash = ?
             WHERE id = ?
         ''', (request.newPassword, user_id))
         
-        # 3. Đánh dấu bản ghi OTP này đã hoàn tất quá trình đổi mật khẩu (is_used = 1)
-        # Việc này đảm bảo reset_token không thể bị tái sử dụng (chống tấn công Replay Attack)
+        # Hủy hiệu lực của reset_token sau khi dùng xong
         cursor.execute('''
             UPDATE dbo.password_reset_codes 
             SET is_used = 1, used_at = GETDATE()
             WHERE id = ?
         ''', (code_id,))
         
-        db.commit() # Xác nhận toàn bộ tiến trình và lưu lại
+        db.commit()
         
         return ResetPasswordResponse(
             success=True,
@@ -237,27 +263,38 @@ def reset_password(request: ResetPasswordRequest, db: pyodbc.Connection = Depend
     finally:
         cursor.close()
 
+
 @router.post("/fcm-token", response_model=dict)
 def update_fcm_token(req: FcmTokenRequest, db: pyodbc.Connection = Depends(get_db), current_user_id: str = Depends(verify_session_token)):
     """
-    Cáº­p nháº­t FCM Token cho user
+    Cập nhật Firebase Cloud Messaging (FCM) Token cho tài khoản người dùng hiện tại.
+    FCM Token này được ứng dụng Flutter thu thập khi khởi chạy và gửi lên nhằm nhận thông báo nhắc lịch công tác.
     """
     cursor = db.cursor()
     try:
+        # Cập nhật FCM token mới vào DB
         cursor.execute("UPDATE dbo.users SET fcm_token = ? WHERE id = ?", (req.fcm_token, req.user_id))
         db.commit()
-        return {"success": True, "message": "Cáº­p nháº­t token thÃ nh cÃ´ng"}
+        return {"success": True, "message": "Cập nhật token thành công"}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         cursor.close()
 
+
 @router.post("/refresh-token", response_model=LoginResponse)
 def refresh_token(request: RefreshTokenRequest, db: pyodbc.Connection = Depends(get_db)):
     """
-    Sử dụng Refresh Token để lấy Access Token và Refresh Token mới, kèm theo thông tin UserProfile.
-    Đảm bảo tính năng Single Session: Refresh token truyền lên phải trùng với trong DB.
+    Làm mới Access Token khi hết hạn mà không bắt người dùng phải nhập lại tài khoản/mật khẩu.
+    
+    Quy trình hoạt động:
+      1. Giải mã Refresh Token truyền lên và kiểm tra tính hợp lệ.
+      2. Truy vấn người dùng trong cơ sở dữ liệu, kiểm tra trạng thái tài khoản có đang hoạt động không.
+      3. Thực thi Single Session: So sánh Refresh Token gửi lên có trùng khớp với token lưu trong DB không.
+         Nếu không khớp, tức là người dùng đã đăng nhập trên một thiết bị khác (làm cập nhật token mới trong DB),
+         ném lỗi thông báo thiết bị hiện tại đã bị đăng xuất.
+      4. Sinh cặp Access Token & Refresh Token mới, lưu Refresh Token mới vào DB và trả về cho client.
     """
     try:
         payload = jwt.decode(request.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -282,17 +319,17 @@ def refresh_token(request: RefreshTokenRequest, db: pyodbc.Connection = Depends(
         if not row or row.is_active == 0:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Tài khoản không tồn tại hoặc đã bị khóa")
             
-        # Single Session Check
+        # Kiểm tra tính đồng bộ của Refresh Token (Single Session check)
         db_refresh_token = row.refresh_token
         if db_refresh_token != request.refresh_token:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bạn đã đăng nhập ở thiết bị khác")
             
-        # Generate new tokens
+        # Khởi tạo cặp token mới
         role = row.role
         new_access_token = create_access_token(data={"sub": user_id, "role": role})
         new_refresh_token = create_refresh_token(data={"sub": user_id})
         
-        # Save new refresh token
+        # Cập nhật Refresh Token mới vào Database
         cursor.execute("UPDATE dbo.users SET refresh_token = ? WHERE id = ?", (new_refresh_token, user_id))
         db.commit()
         
@@ -319,3 +356,4 @@ def refresh_token(request: RefreshTokenRequest, db: pyodbc.Connection = Depends(
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         cursor.close()
+
