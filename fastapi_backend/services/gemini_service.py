@@ -513,9 +513,12 @@ def parse_xlsx_to_markdown(file_path: str) -> str:
 
 async def extract_schedules_from_file_async(file_path: str, file_ext: str, departments: list) -> list:
     """
-    HÀM ĐIỀU PHỐI CHÍNH (Đã tối ưu hóa tốc độ và quota):
+    HÀM ĐIỀU PHỐI CHÍNH (Đã tối ưu hóa tốc độ cao bằng cách chia nhỏ song song):
       1. Nhận diện định dạng tệp và chuyển đổi cấu trúc sang văn bản (pdfplumber/docx/xlsx).
-      2. Gửi toàn bộ văn bản trong 1 request duy nhất với cấu trúc JSON nén tối đa để giảm độ trễ sinh mã.
+      2. Phân chia nội dung thành các nhóm ngày để giảm tải lượng output token sinh ra trong mỗi request,
+         giúp Gemini 2.5 Flash phản hồi siêu nhanh dưới 15 giây (tránh timeout của Render).
+      3. Kích hoạt xử lý song song đồng thời (asyncio.gather) gửi các yêu cầu lên Gemini API bằng model gemini-2.5-flash.
+      4. Thu thập và hợp nhất danh sách lịch công tác trả về.
     """
     # 1. Chuyển đổi định dạng tệp sang văn bản
     if file_ext == '.pdf':
@@ -532,7 +535,26 @@ async def extract_schedules_from_file_async(file_path: str, file_ext: str, depar
         print("[Gemini Service] Không trích xuất được nội dung chữ từ file.")
         return []
         
-    print(f"[Gemini Service] Bắt đầu trích xuất AI (Single Request)... Length: {len(md_text)}")
-    return await extract_full_text_async(md_text, departments)
+    # Luôn sử dụng cơ chế chia nhóm ngày để xử lý song song tốc độ cao (tránh nghẽn output token của Gemini và tránh timeout Render)
+    groups = split_markdown_into_groups(md_text)
+    
+    # Tạo danh sách các task xử lý đồng thời bất đồng bộ bằng gemini-2.5-flash
+    tasks = []
+    for group_name, chunk_content in groups.items():
+        if chunk_content.strip():
+            tasks.append(extract_single_chunk(group_name, chunk_content, departments))
+        
+    # Kích hoạt thực thi đồng thời và chờ đợi kết quả
+    if not tasks:
+        return []
+        
+    results = await asyncio.gather(*tasks)
+    
+    # Hợp nhất kết quả từ các luồng gửi về
+    all_schedules = []
+    for group_schedules in results:
+        all_schedules.extend(group_schedules)
+        
+    return all_schedules
 
 
