@@ -184,14 +184,10 @@ def find_matching_department_id(dept_keyword: str, departments: list) -> str:
 
 def parse_pdf_to_markdown(file_path: str) -> str:
     """
-    Chuyển đổi tệp PDF sang định dạng Markdown.
-    Sử dụng pymupdf4llm để bóc tách bảng biểu (tables) nguyên vẹn cấu trúc lưới.
+    Chuyển đổi tệp PDF sang định dạng Text thô sử dụng pdfplumber.
+    pdfplumber nhẹ và nhanh hơn rất nhiều so với pymupdf4llm, giúp giảm tải CPU trên Render Free Tier.
     """
-    try:
-        return pymupdf4llm.to_markdown(file_path)
-    except Exception as e:
-        print(f"[Gemini Service] pymupdf4llm gặp lỗi, tự động chuyển về pdfplumber: {e}")
-        return parse_pdf_to_text(file_path)
+    return parse_pdf_to_text(file_path)
 
 
 def split_markdown_by_days(md_text: str) -> dict:
@@ -351,31 +347,31 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
 async def extract_full_text_async(text: str, departments: list) -> list:
     """
     Gửi toàn bộ văn bản lên Gemini để trích xuất trong 1 request duy nhất.
-    Giúp tối ưu hóa tốc độ (giảm 3 lần network overhead) và cải thiện tính chính xác nhờ ngữ cảnh liền mạch.
-    Sử dụng model 'gemini-2.5-flash' để tối ưu hóa khả năng hiểu ngữ cảnh dài.
+    Sử dụng Prompt viết tắt cực kỳ gọn nhẹ nhằm tối ưu số lượng output token sinh ra,
+    giúp tăng tốc độ phản hồi của API lên gấp nhiều lần và tiết kiệm tối đa hạn mức quota (1 request/lần).
     """
     dept_info = json.dumps(departments, ensure_ascii=False)
     prompt = f"""
-Bạn là một trợ lý AI phân tích lịch công tác chuyên nghiệp. Nhiệm vụ của bạn là đọc nội dung lịch dưới đây (dạng Markdown) và trích xuất thành một danh sách (array) các đối tượng JSON.
+Bạn là một trợ lý AI bóc tách lịch công tác chuyên nghiệp. Hãy đọc văn bản lịch dưới đây và trích xuất thành một JSON array chứa các objects viết tắt gọn nhẹ sau:
 
 DANH SÁCH PHÒNG BAN TRONG HỆ THỐNG:
 {dept_info}
 
-Quy tắc trích xuất cho mỗi lịch (trả về đúng định dạng JSON array trực tiếp `[...]`):
+Quy tắc cấu trúc viết tắt (CHỈ trả về JSON array thô `[...]` không bọc markdown):
 [
   {{
-    "title": "Nội dung công việc (chuỗi)",
-    "teacher": "Người chủ trì (tên người, ví dụ: Đ/c Vũ (PGĐ))",
-    "room": "Địa điểm (nếu có, không có để chuỗi rỗng)",
-    "scheduleDate": "Ngày diễn ra (định dạng YYYY-MM-DD). Hãy tự suy luận ngày dựa vào tiêu đề Lịch tuần hoặc các dấu hiệu ngày tháng của cả tuần.",
-    "startTime": "Giờ bắt đầu (định dạng HH:MM, mặc định 08:00)",
-    "endTime": "Giờ kết thúc (định dạng HH:MM, mặc định 11:30)",
-    "note": "Thành phần dự hoặc ghi chú (chuỗi)",
-    "department": "Tên viết tắt hoặc từ khóa của phòng ban liên quan nhất (ví dụ: QLĐT, HC, NV1... để trống nếu không rõ)"
+    "t": "Tiêu đề công việc (chuỗi)",
+    "tc": "Người chủ trì (tên người, ví dụ: Đ/c Vũ (PGĐ))",
+    "r": "Địa điểm (nếu có, không có để chuỗi rỗng)",
+    "d": "Ngày (scheduleDate dưới dạng YYYY-MM-DD, hãy tự suy luận dựa vào tiêu đề tuần hoặc các mốc thời gian của cả tuần)",
+    "st": "Giờ bắt đầu (startTime dưới dạng HH:MM, mặc định 08:00)",
+    "et": "Giờ kết thúc (endTime dưới dạng HH:MM, mặc định 11:30)",
+    "n": "Ghi chú/Thành phần tham gia (note)",
+    "dp": "Tên viết tắt hoặc từ khóa của phòng ban liên quan nhất (ví dụ: QLĐT, HC, NV1... để trống nếu không rõ)"
   }}
 ]
 
-NỘI DUNG LỊCH CÔNG TÁC:
+VĂN BẢN LỊCH CÔNG TÁC:
 {text}
 """
     try:
@@ -416,16 +412,30 @@ NỘI DUNG LỊCH CÔNG TÁC:
         result_text = result_text.strip()
         parsed_json = json.loads(result_text)
         
+        schedules = []
         if isinstance(parsed_json, list):
             for item in parsed_json:
-                item["unit"] = "Học viện ANND"
-                item["category"] = "ToanTruong"
-                item["participantUserIds"] = []
+                # Ánh xạ từ các key viết tắt sang định dạng chuẩn của DB
+                schedule_item = {
+                    "title": item.get("t", ""),
+                    "teacher": item.get("tc", ""),
+                    "room": item.get("r", ""),
+                    "scheduleDate": item.get("d", ""),
+                    "startTime": item.get("st", "08:00"),
+                    "endTime": item.get("et", "11:30"),
+                    "note": item.get("n", ""),
+                    "unit": "Học viện ANND",
+                    "category": "ToanTruong",
+                    "participantUserIds": [],
+                    "departmentId": ""
+                }
                 
-                dept_name = item.pop("department", "")
-                item["departmentId"] = find_matching_department_id(dept_name, departments)
+                # Ánh xạ ID phòng ban
+                dept_name = item.get("dp", "")
+                schedule_item["departmentId"] = find_matching_department_id(dept_name, departments)
+                schedules.append(schedule_item)
                 
-            return parsed_json
+            return schedules
         return []
     except Exception as e:
         print(f"[Gemini Service] Lỗi trích xuất toàn bộ text: {e}")
@@ -503,13 +513,11 @@ def parse_xlsx_to_markdown(file_path: str) -> str:
 
 async def extract_schedules_from_file_async(file_path: str, file_ext: str, departments: list) -> list:
     """
-    HÀM ĐIỀU PHỐI CHÍNH (Đã tối ưu hóa tốc độ cao bằng cách chia nhỏ song song):
-      1. Nhận diện định dạng tệp và chuyển đổi cấu trúc sang Markdown.
-      2. Phân chia nội dung Markdown thành các nhóm ngày để giảm tải lượng output token sinh ra trong mỗi request.
-      3. Kích hoạt xử lý song song đồng thời (asyncio.gather) gửi các yêu cầu lên Gemini API bằng model gemini-2.5-flash-lite.
-      4. Thu thập và hợp nhất danh sách lịch công tác trả về.
+    HÀM ĐIỀU PHỐI CHÍNH (Đã tối ưu hóa tốc độ và quota):
+      1. Nhận diện định dạng tệp và chuyển đổi cấu trúc sang văn bản (pdfplumber/docx/xlsx).
+      2. Gửi toàn bộ văn bản trong 1 request duy nhất với cấu trúc JSON nén tối đa để giảm độ trễ sinh mã.
     """
-    # 1. Chuyển đổi định dạng tệp sang Markdown
+    # 1. Chuyển đổi định dạng tệp sang văn bản
     if file_ext == '.pdf':
         md_text = parse_pdf_to_markdown(file_path)
     elif file_ext == '.docx':
@@ -524,26 +532,7 @@ async def extract_schedules_from_file_async(file_path: str, file_ext: str, depar
         print("[Gemini Service] Không trích xuất được nội dung chữ từ file.")
         return []
         
-    # Luôn sử dụng cơ chế chia nhóm ngày để xử lý song song tốc độ cao (tránh nghẽn output token của Gemini)
-    groups = split_markdown_into_groups(md_text)
-    
-    # Tạo danh sách các task xử lý đồng thời bất đồng bộ bằng gemini-2.5-flash-lite
-    tasks = []
-    for group_name, chunk_content in groups.items():
-        if chunk_content.strip():
-            tasks.append(extract_single_chunk(group_name, chunk_content, departments))
-        
-    # Kích hoạt thực thi đồng thời và chờ đợi kết quả
-    if not tasks:
-        return []
-        
-    results = await asyncio.gather(*tasks)
-    
-    # Hợp nhất kết quả từ các luồng gửi về
-    all_schedules = []
-    for group_schedules in results:
-        all_schedules.extend(group_schedules)
-        
-    return all_schedules
+    print(f"[Gemini Service] Bắt đầu trích xuất AI (Single Request)... Length: {len(md_text)}")
+    return await extract_full_text_async(md_text, departments)
 
 
