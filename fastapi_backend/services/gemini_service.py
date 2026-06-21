@@ -503,10 +503,11 @@ def parse_xlsx_to_markdown(file_path: str) -> str:
 
 async def extract_schedules_from_file_async(file_path: str, file_ext: str, departments: list) -> list:
     """
-    HÀM ĐIỀU PHỐI CHÍNH (Đã tối ưu hóa hiệu năng):
+    HÀM ĐIỀU PHỐI CHÍNH (Đã tối ưu hóa tốc độ cao bằng cách chia nhỏ song song):
       1. Nhận diện định dạng tệp và chuyển đổi cấu trúc sang Markdown.
-      2. Nếu độ dài văn bản ngắn (< 15,000 ký tự), thực hiện trích xuất trong 1 request duy nhất để giảm độ trễ mạng và tăng độ chính xác.
-      3. Nếu văn bản quá dài, phân chia thành 3 nhóm ngày và xử lý song song.
+      2. Phân chia nội dung Markdown thành các nhóm ngày để giảm tải lượng output token sinh ra trong mỗi request.
+      3. Kích hoạt xử lý song song đồng thời (asyncio.gather) gửi các yêu cầu lên Gemini API bằng model gemini-2.5-flash-lite.
+      4. Thu thập và hợp nhất danh sách lịch công tác trả về.
     """
     # 1. Chuyển đổi định dạng tệp sang Markdown
     if file_ext == '.pdf':
@@ -523,24 +524,22 @@ async def extract_schedules_from_file_async(file_path: str, file_ext: str, depar
         print("[Gemini Service] Không trích xuất được nội dung chữ từ file.")
         return []
         
-    # Tối ưu hóa: Nếu nội dung ngắn, gọi 1 request duy nhất (giảm thiểu network overhead và rủi ro rate limit)
-    if len(md_text) < 15000:
-        print(f"[Gemini Service] Nội dung ngắn ({len(md_text)} ký tự), sử dụng Single Request Optimization...")
-        return await extract_full_text_async(md_text, departments)
-        
-    print(f"[Gemini Service] Nội dung dài ({len(md_text)} ký tự), sử dụng Parallel Chunking...")
-    # 2. Phân nhóm ngày
+    # Luôn sử dụng cơ chế chia nhóm ngày để xử lý song song tốc độ cao (tránh nghẽn output token của Gemini)
     groups = split_markdown_into_groups(md_text)
     
-    # 3. Tạo danh sách các task xử lý đồng thời bất đồng bộ
+    # Tạo danh sách các task xử lý đồng thời bất đồng bộ bằng gemini-2.5-flash-lite
     tasks = []
     for group_name, chunk_content in groups.items():
-        tasks.append(extract_single_chunk(group_name, chunk_content, departments))
+        if chunk_content.strip():
+            tasks.append(extract_single_chunk(group_name, chunk_content, departments))
         
     # Kích hoạt thực thi đồng thời và chờ đợi kết quả
+    if not tasks:
+        return []
+        
     results = await asyncio.gather(*tasks)
     
-    # 4. Hợp nhất kết quả từ các luồng gửi về
+    # Hợp nhất kết quả từ các luồng gửi về
     all_schedules = []
     for group_schedules in results:
         all_schedules.extend(group_schedules)
