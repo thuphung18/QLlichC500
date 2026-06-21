@@ -117,8 +117,9 @@ def shutdown_event():
 # ─────────────────────────────────────────────
 @app.get("/", tags=["Health Check"])
 def root():
-    """Endpoint đơn giản để kiểm tra xem Server có phản hồi hay không."""
-    return {"status": "ok", "message": "QL Lịch Tuần API is running!", "version": "2.0"}
+    """Endpoint kiểm tra trạng thái hoạt động của Server."""
+    return {"status": "ok", "message": "QL Lịch Tuần API is running!", "version": "2.0.1 - debug exception"}
+
 
 @app.get("/health", tags=["Health Check"])
 def health():
