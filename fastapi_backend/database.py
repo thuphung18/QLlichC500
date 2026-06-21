@@ -16,112 +16,134 @@ DRIVER   = os.environ.get('DB_DRIVER',   '{ODBC Driver 17 for SQL Server}')
 UID      = os.environ.get('DB_UID',      'nghiand')
 PWD      = os.environ.get('DB_PWD',      '@NangHaNoi2020@')
 
-# ─────────────────────────────────────────────
-# Bật ODBC Connection Pooling (tái sử dụng
-# kết nối ở tầng ODBC Driver để giảm TCP overhead)
-# ─────────────────────────────────────────────
+# Bật ODBC-level pooling để driver tái sử dụng socket
 pyodbc.pooling = True
 
 # ─────────────────────────────────────────────
-# Thread-safe Connection Pool
+# Kích thước pool
 # ─────────────────────────────────────────────
-POOL_SIZE = int(os.environ.get('DB_POOL_SIZE', '20'))   # kết nối mặc định giữ mở
-MAX_OVERFLOW = int(os.environ.get('DB_MAX_OVERFLOW', '30'))  # kết nối tối đa được tạo thêm
+POOL_MIN  = int(os.environ.get('DB_POOL_MIN',  '5'))   # kết nối luôn giữ sẵn trong pool
+POOL_MAX  = int(os.environ.get('DB_POOL_MAX',  '20'))  # tổng kết nối tối đa được phép tồn tại
 
-_pool: queue.Queue = queue.Queue(maxsize=POOL_SIZE + MAX_OVERFLOW)
-_pool_lock = threading.Lock()
-_active_connections = 0                 # tổng số kết nối đã tạo (bao gồm đang dùng + trong hàng đợi)
+_pool:      queue.Queue      = queue.Queue()   # không giới hạn kích thước queue
+_lock:      threading.Lock   = threading.Lock()
+_total:     int              = 0              # tổng kết nối vật lý đã tạo (trong pool + đang dùng)
 
-def _build_connection_string(use_fallback: bool = False) -> str:
-    if use_fallback:
-        return f"DRIVER={{SQL Server}};SERVER={SERVER};DATABASE={DATABASE};UID={UID};PWD={PWD};"
-    return f"DRIVER={DRIVER};SERVER={SERVER};DATABASE={DATABASE};UID={UID};PWD={PWD};"
 
-def _create_new_connection() -> pyodbc.Connection:
-    """Tạo một kết nối vật lý mới đến SQL Server."""
+def _build_conn_str() -> str:
+    return (
+        f"DRIVER={DRIVER};SERVER={SERVER};"
+        f"DATABASE={DATABASE};UID={UID};PWD={PWD};"
+        f"Connection Timeout=10;"
+    )
+
+
+def _new_conn() -> pyodbc.Connection:
+    """Tạo một kết nối vật lý mới, thử fallback nếu driver không tìm thấy."""
     try:
-        conn = pyodbc.connect(_build_connection_string(), timeout=10)
-        conn.autocommit = False
-        return conn
+        conn = pyodbc.connect(_build_conn_str())
     except pyodbc.Error:
-        # Fallback về driver mặc định nếu ODBC Driver 17 không khả dụng
-        conn = pyodbc.connect(_build_connection_string(use_fallback=True), timeout=10)
-        conn.autocommit = False
-        return conn
+        fallback = (
+            f"DRIVER={{SQL Server}};SERVER={SERVER};"
+            f"DATABASE={DATABASE};UID={UID};PWD={PWD};"
+        )
+        conn = pyodbc.connect(fallback)
+    conn.autocommit = False
+    return conn
 
-def _is_connection_alive(conn: pyodbc.Connection) -> bool:
-    """Kiểm tra kết nối có còn hợp lệ không (tránh lỗi broken pipe sau thời gian dài nhàn rỗi)."""
+
+def _is_alive(conn: pyodbc.Connection) -> bool:
     try:
         conn.execute("SELECT 1")
         return True
     except Exception:
         return False
 
+
 def get_connection() -> pyodbc.Connection:
     """
-    Lấy kết nối từ pool. Nếu pool còn kết nối khả dụng thì tái sử dụng,
-    ngược lại tạo mới (trong phạm vi MAX_OVERFLOW).
+    Lấy kết nối từ pool.
+    Logic đơn giản & chính xác:
+      1. Thử lấy ngay từ queue (non-blocking).
+      2. Nếu lấy được → kiểm tra còn sống không → dùng.
+      3. Nếu queue rỗng và chưa đạt POOL_MAX → tạo mới.
+      4. Nếu đã đạt POOL_MAX → chờ queue tối đa 15s.
     """
-    global _active_connections
+    global _total
 
-    # Thử lấy ngay từ pool (non-blocking)
-    try:
-        conn = _pool.get_nowait()
-        # Kiểm tra health trước khi tái sử dụng
-        if _is_connection_alive(conn):
+    # Bước 1: thử lấy ngay từ pool
+    while True:
+        try:
+            conn = _pool.get_nowait()
+        except queue.Empty:
+            break   # pool rỗng → sang bước tiếp
+
+        if _is_alive(conn):
             return conn
-        else:
-            # Kết nối chết → đóng và tạo lại
-            with _pool_lock:
-                _active_connections -= 1
-            try:
-                conn.close()
-            except Exception:
-                pass
-    except queue.Empty:
-        pass
-
-    # Pool rỗng → tạo kết nối mới nếu chưa đạt giới hạn
-    with _pool_lock:
-        if _active_connections < POOL_SIZE + MAX_OVERFLOW:
-            _active_connections += 1
-        else:
-            # Đã đạt giới hạn → chờ pool có kết nối trả về (tối đa 10 giây)
-            pass
-
-    try:
-        conn = _pool.get(timeout=10)   # chờ kết nối được trả lại
-        if _is_connection_alive(conn):
-            return conn
-        with _pool_lock:
-            _active_connections -= 1
+        # Kết nối chết → bỏ, giảm bộ đếm, thử tiếp
+        with _lock:
+            _total -= 1
         try:
             conn.close()
         except Exception:
             pass
-    except queue.Empty:
-        pass
 
-    return _create_new_connection()
+    # Bước 2: pool rỗng → tạo mới hoặc chờ
+    with _lock:
+        can_create = _total < POOL_MAX
+        if can_create:
+            _total += 1
+
+    if can_create:
+        try:
+            return _new_conn()
+        except Exception:
+            with _lock:
+                _total -= 1
+            raise
+
+    # Bước 3: đã đạt giới hạn → chờ kết nối được trả về
+    try:
+        conn = _pool.get(timeout=15)
+        if _is_alive(conn):
+            return conn
+        with _lock:
+            _total -= 1
+        try:
+            conn.close()
+        except Exception:
+            pass
+        # Sau khi discard, thử tạo mới
+        with _lock:
+            _total += 1
+        return _new_conn()
+    except queue.Empty:
+        raise Exception("DB connection pool exhausted – thử lại sau")
+
 
 def return_connection(conn: pyodbc.Connection):
-    """Trả kết nối về pool sau khi sử dụng xong."""
+    """Trả kết nối về pool để request tiếp theo tái sử dụng."""
+    global _total
     try:
+        # Reset trạng thái trước khi trả lại
+        try:
+            conn.rollback()   # hủy transaction dở dang (nếu có)
+        except Exception:
+            pass
         _pool.put_nowait(conn)
     except queue.Full:
-        # Pool đầy → đóng kết nối này (xảy ra khi MAX_OVERFLOW bị vượt qua)
-        global _active_connections
-        with _pool_lock:
-            _active_connections -= 1
+        # Không nên xảy ra vì queue không giới hạn, nhưng phòng thủ
+        with _lock:
+            _total -= 1
         try:
             conn.close()
         except Exception:
             pass
+
 
 def get_db() -> Generator[pyodbc.Connection, None, None]:
     """
-    FastAPI Dependency: cung cấp kết nối từ pool cho mỗi request,
-    và tự động trả về pool sau khi request hoàn thành.
+    FastAPI Dependency: inject kết nối vào handler, tự trả về pool sau request.
     """
     conn = get_connection()
     try:
@@ -135,21 +157,21 @@ def get_db() -> Generator[pyodbc.Connection, None, None]:
     finally:
         return_connection(conn)
 
-def pre_warm_pool(size: int = 5):
-    """
-    Khởi tạo trước một số kết nối trong pool khi server khởi động,
-    giúp giảm độ trễ cho những request đầu tiên.
-    """
-    global _active_connections
+
+def pre_warm_pool(size: int = POOL_MIN):
+    """Tạo sẵn một số kết nối khi server khởi động để giảm latency request đầu tiên."""
+    global _total
     warmed = 0
-    for _ in range(min(size, POOL_SIZE)):
+    for _ in range(min(size, POOL_MAX)):
         try:
-            conn = _create_new_connection()
-            with _pool_lock:
-                _active_connections += 1
+            with _lock:
+                _total += 1
+            conn = _new_conn()
             _pool.put_nowait(conn)
             warmed += 1
         except Exception as e:
-            print(f"[Pool] Không thể khởi tạo kết nối trước: {e}")
+            with _lock:
+                _total -= 1
+            print(f"[Pool] Pre-warm failed: {e}")
             break
-    print(f"[Pool] Đã khởi tạo trước {warmed} kết nối.")
+    print(f"[Pool] Pre-warmed {warmed} connections (total={_total})")

@@ -101,7 +101,7 @@ def root():
 def health():
     """Endpoint kiểm tra chi tiết hơn (dùng cho load balancer/uptime monitor)."""
     from cache import schedule_cache, department_cache
-    from database import _pool, _active_connections
+    from database import _pool, _total
     return {
         "status": "ok",
         "cache": {
@@ -110,7 +110,8 @@ def health():
         },
         "db_pool": {
             "pool_available": _pool.qsize(),
-            "total_created": _active_connections,
+            "total_created": _total,
+            "in_use": _total - _pool.qsize(),
         }
     }
 
