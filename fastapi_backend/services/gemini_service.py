@@ -277,7 +277,7 @@ async def extract_single_chunk(group_name: str, chunk_text: str, departments: li
     prompt = f"""
 Bạn là một trợ lý AI phân tích lịch công tác. Nhiệm vụ của bạn là đọc nội dung lịch dưới đây (dạng Markdown) và trích xuất thành danh sách các object JSON rút gọn.
 
-Quy tắc trích xuất (CHỈ trả về JSON array trực tiếp `[...]`, không bọc trong markdown code block, không giải thích thêm):
+Quy tắc trích xuất (CHỈ trả về JSON array trực tiếp `[...]`):
 [
   {{
     "title": "Nội dung công việc (chuỗi)",
@@ -296,15 +296,32 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
 """
     try:
         loop = asyncio.get_event_loop()
-        # Chạy gọi API đồng bộ trong ThreadPoolExecutor của asyncio
-        response = await loop.run_in_executor(
-            None,
-            lambda: _generate_content('gemini-2.5-flash-lite', prompt)
-        )
         
-        result_text = response.strip() if isinstance(response, str) else response
+        def _call_api():
+            if _USE_NEW_SDK:
+                from google.genai import types
+                config = types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.1
+                )
+                response = _client.models.generate_content(
+                    model='gemini-2.5-flash-lite',
+                    contents=prompt,
+                    config=config
+                )
+                return response.text
+            else:
+                model = genai.GenerativeModel('gemini-2.5-flash-lite')
+                response = model.generate_content(
+                    prompt,
+                    generation_config={"response_mime_type": "application/json", "temperature": 0.1}
+                )
+                return response.text
+
+        response_text = await loop.run_in_executor(None, _call_api)
+        result_text = response_text.strip() if isinstance(response_text, str) else response_text
         
-        # Dọn dẹp thẻ code block
+        # Dọn dẹp thẻ code block phòng hờ trường hợp API không tuân thủ hoàn toàn JSON mode
         if result_text.startswith("```json"):
             result_text = result_text[7:]
         if result_text.startswith("```"):
@@ -316,13 +333,11 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
         parsed_json = json.loads(result_text)
         
         if isinstance(parsed_json, list):
-            # Điền các giá trị mặc định của hệ thống sau khi trích xuất
             for item in parsed_json:
                 item["unit"] = "Học viện ANND"
                 item["category"] = "ToanTruong"
                 item["participantUserIds"] = []
                 
-                # Thực hiện ánh xạ trường 'department' từ chuỗi thô sang UUID của database
                 dept_name = item.pop("department", "")
                 item["departmentId"] = find_matching_department_id(dept_name, departments)
                 
@@ -330,6 +345,90 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
         return []
     except Exception as e:
         print(f"[Gemini Service] Lỗi xử lý nhóm {group_name}: {e}")
+        return []
+
+
+async def extract_full_text_async(text: str, departments: list) -> list:
+    """
+    Gửi toàn bộ văn bản lên Gemini để trích xuất trong 1 request duy nhất.
+    Giúp tối ưu hóa tốc độ (giảm 3 lần network overhead) và cải thiện tính chính xác nhờ ngữ cảnh liền mạch.
+    Sử dụng model 'gemini-2.5-flash' để tối ưu hóa khả năng hiểu ngữ cảnh dài.
+    """
+    dept_info = json.dumps(departments, ensure_ascii=False)
+    prompt = f"""
+Bạn là một trợ lý AI phân tích lịch công tác chuyên nghiệp. Nhiệm vụ của bạn là đọc nội dung lịch dưới đây (dạng Markdown) và trích xuất thành một danh sách (array) các đối tượng JSON.
+
+DANH SÁCH PHÒNG BAN TRONG HỆ THỐNG:
+{dept_info}
+
+Quy tắc trích xuất cho mỗi lịch (trả về đúng định dạng JSON array trực tiếp `[...]`):
+[
+  {{
+    "title": "Nội dung công việc (chuỗi)",
+    "teacher": "Người chủ trì (tên người, ví dụ: Đ/c Vũ (PGĐ))",
+    "room": "Địa điểm (nếu có, không có để chuỗi rỗng)",
+    "scheduleDate": "Ngày diễn ra (định dạng YYYY-MM-DD). Hãy tự suy luận ngày dựa vào tiêu đề Lịch tuần hoặc các dấu hiệu ngày tháng của cả tuần.",
+    "startTime": "Giờ bắt đầu (định dạng HH:MM, mặc định 08:00)",
+    "endTime": "Giờ kết thúc (định dạng HH:MM, mặc định 11:30)",
+    "note": "Thành phần dự hoặc ghi chú (chuỗi)",
+    "department": "Tên viết tắt hoặc từ khóa của phòng ban liên quan nhất (ví dụ: QLĐT, HC, NV1... để trống nếu không rõ)"
+  }}
+]
+
+NỘI DUNG LỊCH CÔNG TÁC:
+{text}
+"""
+    try:
+        loop = asyncio.get_event_loop()
+        
+        def _call_api():
+            if _USE_NEW_SDK:
+                from google.genai import types
+                config = types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.1
+                )
+                response = _client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=prompt,
+                    config=config
+                )
+                return response.text
+            else:
+                model = genai.GenerativeModel('gemini-2.5-flash')
+                response = model.generate_content(
+                    prompt,
+                    generation_config={"response_mime_type": "application/json", "temperature": 0.1}
+                )
+                return response.text
+
+        response_text = await loop.run_in_executor(None, _call_api)
+        result_text = response_text.strip() if isinstance(response_text, str) else response_text
+        
+        # Dọn dẹp thẻ code block phòng hờ trường hợp API không tuân thủ hoàn toàn JSON mode
+        if result_text.startswith("```json"):
+            result_text = result_text[7:]
+        if result_text.startswith("```"):
+            result_text = result_text[3:]
+        if result_text.endswith("```"):
+            result_text = result_text[:-3]
+            
+        result_text = result_text.strip()
+        parsed_json = json.loads(result_text)
+        
+        if isinstance(parsed_json, list):
+            for item in parsed_json:
+                item["unit"] = "Học viện ANND"
+                item["category"] = "ToanTruong"
+                item["participantUserIds"] = []
+                
+                dept_name = item.pop("department", "")
+                item["departmentId"] = find_matching_department_id(dept_name, departments)
+                
+            return parsed_json
+        return []
+    except Exception as e:
+        print(f"[Gemini Service] Lỗi trích xuất toàn bộ text: {e}")
         return []
 
 
@@ -404,11 +503,10 @@ def parse_xlsx_to_markdown(file_path: str) -> str:
 
 async def extract_schedules_from_file_async(file_path: str, file_ext: str, departments: list) -> list:
     """
-    HÀM ĐIỀU PHỐI CHÍNH (Đồng thời bất đồng bộ):
+    HÀM ĐIỀU PHỐI CHÍNH (Đã tối ưu hóa hiệu năng):
       1. Nhận diện định dạng tệp và chuyển đổi cấu trúc sang Markdown.
-      2. Phân chia nội dung Markdown thành các nhóm ngày nhỏ hơn để tránh Rate Limit.
-      3. Kích hoạt xử lý song song đồng thời (asyncio.gather) gửi các yêu cầu lên Gemini API.
-      4. Thu thập và hợp nhất danh sách lịch công tác trả về.
+      2. Nếu độ dài văn bản ngắn (< 15,000 ký tự), thực hiện trích xuất trong 1 request duy nhất để giảm độ trễ mạng và tăng độ chính xác.
+      3. Nếu văn bản quá dài, phân chia thành 3 nhóm ngày và xử lý song song.
     """
     # 1. Chuyển đổi định dạng tệp sang Markdown
     if file_ext == '.pdf':
@@ -425,6 +523,12 @@ async def extract_schedules_from_file_async(file_path: str, file_ext: str, depar
         print("[Gemini Service] Không trích xuất được nội dung chữ từ file.")
         return []
         
+    # Tối ưu hóa: Nếu nội dung ngắn, gọi 1 request duy nhất (giảm thiểu network overhead và rủi ro rate limit)
+    if len(md_text) < 15000:
+        print(f"[Gemini Service] Nội dung ngắn ({len(md_text)} ký tự), sử dụng Single Request Optimization...")
+        return await extract_full_text_async(md_text, departments)
+        
+    print(f"[Gemini Service] Nội dung dài ({len(md_text)} ký tự), sử dụng Parallel Chunking...")
     # 2. Phân nhóm ngày
     groups = split_markdown_into_groups(md_text)
     
