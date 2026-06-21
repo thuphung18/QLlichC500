@@ -19,18 +19,38 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ─────────────────────────────────────────────
+# Hàm hỗ trợ dọn dẹp API Key nếu bị dính tên biến hoặc dấu nháy khi copy-paste
+# ─────────────────────────────────────────────
+def get_clean_gemini_api_key() -> str:
+    key = os.getenv("GEMINI_API_KEY")
+    if not key:
+        return ""
+    key = key.strip()
+    # Trường hợp người dùng copy nguyên dòng từ file .env: GEMINI_API_KEY="key"
+    if key.startswith("GEMINI_API_KEY="):
+        key = key.split("GEMINI_API_KEY=")[1].strip()
+    # Loại bỏ dấu nháy kép hoặc nháy đơn bao quanh key
+    if (key.startswith('"') and key.endswith('"')) or (key.startswith("'") and key.endswith("'")):
+        key = key[1:-1].strip()
+    return key
+
+
+# ─────────────────────────────────────────────
 # Cấu hình Gemini SDK Client (Hỗ trợ cả SDK mới và cũ)
 # ─────────────────────────────────────────────
+_API_KEY = get_clean_gemini_api_key()
+
 try:
     from google import genai as _genai_new
     # Khởi tạo client theo SDK 'google-genai' mới (khuyên dùng)
-    _client = _genai_new.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    _client = _genai_new.Client(api_key=_API_KEY)
     _USE_NEW_SDK = True
 except ImportError:
     # Cơ chế dự phòng (fallback) nếu hệ thống chỉ cài SDK 'google-generativeai' cũ
     import google.generativeai as genai
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    genai.configure(api_key=_API_KEY)
     _USE_NEW_SDK = False
+
 
 
 def _generate_content(model_name: str, prompt: str) -> str:
@@ -309,8 +329,9 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
             return parsed_json
         return []
     except Exception as e:
-        print(f"Error extracting schedules for {group_name}: {e}")
-        raise e
+        print(f"[Gemini Service] Lỗi xử lý nhóm {group_name}: {e}")
+        return []
+
 
 
 def parse_docx_to_markdown(file_path: str) -> str:
