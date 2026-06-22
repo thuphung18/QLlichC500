@@ -446,10 +446,14 @@ async def import_schedules(file: UploadFile = File(...),
         cursor = db.cursor()
         cursor.execute("SELECT id, name FROM dbo.departments")
         departments = [{"id": str(row[0]), "name": row[1]} for row in cursor.fetchall()]
+        
+        # Lấy danh sách người dùng hoạt động để tự động ánh xạ tài khoản
+        cursor.execute("SELECT id, username, full_name, department_id FROM dbo.users WHERE is_active = 1")
+        users = [{"id": str(row[0]), "username": row[1], "full_name": row[2], "department_id": str(row[3]) if row[3] else None} for row in cursor.fetchall()]
         cursor.close()
 
         # Gọi dịch vụ Gemini AI trích xuất thông tin lịch công tác
-        from services.gemini_service import extract_schedules_from_file_async
+        from services.gemini_service import extract_schedules_from_file_async, match_participant_to_user
         schedules_json = await extract_schedules_from_file_async(
             temp_file_path, file_ext, departments
         )
@@ -463,6 +467,27 @@ async def import_schedules(file: UploadFile = File(...),
                 status_code=400,
                 detail="Không thể trích xuất lịch công tác từ file hoặc file trống."
             )
+
+        # Tự động ánh xạ người tham gia và người chủ trì vào tài khoản DB
+        for item in schedules_json:
+            matched_set = set()
+            
+            # Khớp danh sách người tham gia thô
+            raw_list = item.get("participants_raw", [])
+            for raw_name in raw_list:
+                uid = match_participant_to_user(raw_name, users, departments)
+                if uid:
+                    matched_set.add(uid)
+            
+            # Khớp người chủ trì (teacher)
+            teacher_name = item.get("teacher", "")
+            if teacher_name:
+                uid = match_participant_to_user(teacher_name, users, departments)
+                if uid:
+                    matched_set.add(uid)
+                    
+            item["participantUserIds"] = list(matched_set)
+
         return schedules_json
     except HTTPException:
         raise

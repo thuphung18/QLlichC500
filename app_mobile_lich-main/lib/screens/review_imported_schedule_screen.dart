@@ -191,6 +191,30 @@ class _ReviewImportedScheduleScreenState extends State<ReviewImportedScheduleScr
                         if (schedule.room.isNotEmpty) _buildInfoRow(Icons.location_on, 'Địa điểm', schedule.room),
                         if (schedule.note != null && schedule.note!.isNotEmpty)
                           _buildInfoRow(Icons.info_outline, 'Ghi chú / Thành phần dự', schedule.note!),
+                        if (schedule.participantUserIds.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Thành viên được giao việc tự động:',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey),
+                          ),
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: schedule.participantUserIds.map((uid) {
+                              final u = _users.firstWhere((user) => user.id == uid, orElse: () => const UserCompact(id: '', fullName: 'Không rõ', departmentId: ''));
+                              return Chip(
+                                label: Text(
+                                  u.fullName,
+                                  style: const TextStyle(fontSize: 11, color: AppColors.primaryDark, fontWeight: FontWeight.w500),
+                                ),
+                                backgroundColor: AppColors.primaryLight.withAlpha(25),
+                                padding: EdgeInsets.zero,
+                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              );
+                            }).toList(),
+                          ),
+                        ],
                         const SizedBox(height: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
