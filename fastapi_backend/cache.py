@@ -16,7 +16,7 @@ from typing import Any, Optional
 # ─────────────────────────────────────────────────────────────────
 SCHEDULE_TTL_SECONDS   = 300   # Thời gian sống của cache lịch: 5 phút (300 giây)
 DEPARTMENT_TTL_SECONDS = 600   # Thời gian sống của cache phòng ban: 10 phút (600 giây)
-MAX_CACHE_ENTRIES      = 2000  # Số lượng bản ghi cache tối đa được lưu trữ để tránh tràn bộ nhớ (Out Of Memory)
+MAX_CACHE_ENTRIES      = 5000  # Chỉnh lên 5000 để chứa đủ tổ hợp cho 2000 users, chiếm khoảng ~5MB RAM
 
 
 class TTLCache:

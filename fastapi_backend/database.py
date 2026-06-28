@@ -31,8 +31,8 @@ pyodbc.pooling = True
 # ─────────────────────────────────────────────
 # Kích thước Pool (Sử dụng hàng đợi Queue để lưu trữ các kết nối nhàn rỗi)
 # ─────────────────────────────────────────────
-POOL_MIN  = int(os.environ.get('DB_POOL_MIN',  '5'))   # Số kết nối duy trì tối thiểu trong pool
-POOL_MAX  = int(os.environ.get('DB_POOL_MAX',  '20'))  # Số kết nối vật lý tối đa được phép tạo ra
+POOL_MIN  = int(os.environ.get('DB_POOL_MIN',  '10'))   # Số kết nối duy trì tối thiểu trong pool
+POOL_MAX  = int(os.environ.get('DB_POOL_MAX',  '30'))  # Tăng lên 30 để cân bằng giữa RAM 512MB và khả năng chịu tải
 
 _pool:      queue.Queue      = queue.Queue()   # Queue chứa kết nối nhàn rỗi (không giới hạn kích thước queue để tránh block khi put)
 _lock:      threading.Lock   = threading.Lock() # Lock đồng bộ hóa việc thay đổi số lượng kết nối tổng
@@ -87,8 +87,8 @@ def get_connection() -> pyodbc.Connection:
       3. Nếu Queue rỗng:
          - Kiểm tra tổng số kết nối đã tạo (_total) xem đã đạt POOL_MAX chưa.
          - Nếu chưa vượt quá POOL_MAX: Tăng bộ đếm _total và tạo kết nối vật lý mới trả về.
-         - Nếu đã đạt POOL_MAX: Chờ kết nối được trả lại từ các luồng khác vào Queue (chờ tối đa 15 giây).
-         - Hết 15 giây nếu không có kết nối nào rảnh, ném lỗi cạn kiệt kết nối.
+         - Nếu đã đạt POOL_MAX: Chờ kết nối được trả lại từ các luồng khác vào Queue (chờ tối đa 30 giây).
+         - Hết 30 giây nếu không có kết nối nào rảnh, ném lỗi cạn kiệt kết nối.
     """
     global _total
 
@@ -126,7 +126,7 @@ def get_connection() -> pyodbc.Connection:
 
     # Bước 3: Đã đạt giới hạn POOL_MAX, chuyển sang chế độ đợi các luồng khác trả kết nối về pool
     try:
-        conn = _pool.get(timeout=15)
+        conn = _pool.get(timeout=30)
         if _is_alive(conn):
             return conn
             

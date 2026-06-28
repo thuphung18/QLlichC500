@@ -105,6 +105,50 @@ def check_schedules_and_notify():
         conn.close()
 
 
+def send_import_notifications_bg(has_toantruong: bool, dept_ids: set):
+    """
+    Tác vụ chạy ngầm được kích hoạt sau khi import lịch thành công.
+    - Nếu có lịch 'Toàn trường': Lấy tất cả FCM Token của hệ thống.
+    - Nếu chỉ có lịch của Khoa/Phòng cụ thể: Chỉ lấy FCM Token của user thuộc khoa/phòng đó.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    tokens = set()
+    try:
+        if has_toantruong:
+            # Gửi cho tất cả user có token
+            cursor.execute("SELECT fcm_token FROM dbo.users WHERE fcm_token IS NOT NULL AND is_active = 1")
+            for row in cursor.fetchall():
+                tokens.add(row[0])
+        elif dept_ids:
+            # Gửi cho user thuộc các department cụ thể
+            dept_ids_list = list(dept_ids)
+            placeholders = ",".join(["?"] * len(dept_ids_list))
+            query = f"SELECT fcm_token FROM dbo.users WHERE fcm_token IS NOT NULL AND is_active = 1 AND department_id IN ({placeholders})"
+            cursor.execute(query, dept_ids_list)
+            for row in cursor.fetchall():
+                tokens.add(row[0])
+        
+        if tokens:
+            tokens_list = list(tokens)
+            message = messaging.MulticastMessage(
+                notification=messaging.Notification(
+                    title="Lịch công tác mới!",
+                    body="Có lịch công tác mới vừa được cập nhật trên hệ thống. Hãy kiểm tra ngay!",
+                ),
+                tokens=tokens_list,
+            )
+            response = messaging.send_each_for_multicast(message)
+            print(f"[Import Notify] Đã gửi thông báo lịch mới đến {response.success_count}/{len(tokens_list)} thiết bị.")
+        else:
+            print("[Import Notify] Không tìm thấy thiết bị nào để gửi thông báo.")
+    except Exception as e:
+        print(f"[Import Notify] Lỗi khi gửi thông báo: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def start_scheduler():
     """
     Thiết lập và khởi chạy Bộ lập lịch chạy ngầm (Background Scheduler).

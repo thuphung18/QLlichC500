@@ -153,7 +153,7 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000,
         reload=False,               # Tắt reload tự động để tối ưu hiệu năng trên production
-        workers=1,                  # Số worker chạy song song (có thể tăng lên khi deploy thật)
+        workers=2,                  # Tăng lên 2 workers để chia sẻ tải trên cấu hình 1 CPU
         log_level="info",
     )
 

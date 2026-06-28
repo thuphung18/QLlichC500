@@ -12,7 +12,7 @@
 #     • Sau khi thao tác ghi thành công, toàn bộ Cache lịch liên quan sẽ bị xóa (invalidate) lập tức.
 #   - Nhập lịch (Import): Sử dụng Gemini AI trích xuất thông tin lịch từ file PDF/Word/Excel tải lên.
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 import pyodbc
 from typing import List, Optional
 import uuid
@@ -20,6 +20,7 @@ from datetime import datetime
 from database import get_db
 from schemas import ScheduleItem, ScheduleListResponse, CreateScheduleRequest, FormDataResponse, Department, UserCompact
 from cache import schedule_cache, department_cache, make_schedule_key, invalidate_schedules
+from scheduler import send_import_notifications_bg
 
 router = APIRouter(prefix="/api/schedules", tags=["Schedules"])
 
@@ -509,6 +510,7 @@ async def import_schedules(file: UploadFile = File(...),
 
 @router.post("/bulk", response_model=dict)
 def bulk_create_schedules(request: List[CreateScheduleRequest],
+                           background_tasks: BackgroundTasks,
                            user_id: str = "u001",
                            db: pyodbc.Connection = Depends(get_db)):
     """
@@ -522,6 +524,11 @@ def bulk_create_schedules(request: List[CreateScheduleRequest],
     cursor = db.cursor()
     success_count = 0
     skip_count = 0
+    
+    # Biến cờ (flags) để xác định đối tượng nhận thông báo
+    has_toantruong = False
+    dept_ids_to_notify = set()
+    
     try:
         # Lấy danh sách phòng ban để fallback khi AI không nhận ra department
         cursor.execute("SELECT TOP 1 id FROM dbo.departments ORDER BY name")
@@ -579,6 +586,12 @@ def bulk_create_schedules(request: List[CreateScheduleRequest],
                 skip_count += 1
                 continue
 
+            # Thu thập dữ liệu để chuẩn bị gửi Push Notification
+            if cat == "ToanTruong":
+                has_toantruong = True
+            else:
+                dept_ids_to_notify.add(dept_id)
+
             # Lưu thông tin lịch
             cursor.execute("""
                 INSERT INTO dbo.schedules (
@@ -606,6 +619,11 @@ def bulk_create_schedules(request: List[CreateScheduleRequest],
         db.commit()
         # Xóa toàn bộ cache sau khi lưu dữ liệu hàng loạt
         invalidate_schedules()
+        
+        # Nếu có chèn thành công ít nhất 1 lịch thì đẩy tác vụ gửi thông báo xuống nền
+        if success_count > 0 and (has_toantruong or len(dept_ids_to_notify) > 0):
+            background_tasks.add_task(send_import_notifications_bg, has_toantruong, dept_ids_to_notify)
+
         msg = f"Đã thêm thành công {success_count} lịch."
         if skip_count > 0:
             msg += f" ({skip_count} lịch bỏ qua do không xác định được phòng ban.)"
