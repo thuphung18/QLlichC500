@@ -22,10 +22,11 @@ load_dotenv(override=True)
 # Hàm hỗ trợ dọn dẹp API Key nếu bị dính tên biến hoặc dấu nháy khi copy-paste
 # ─────────────────────────────────────────────
 def get_clean_gemini_api_key() -> str:
-    key = os.getenv("GEMINI_API_KEY")
-    if not key:
-        return ""
-    key = key.strip()
+    key = os.getenv("GEMINI_API_KEY", "")
+    # Hardcode đè luôn key mới nếu hệ thống (như Render) vẫn đang giữ key cũ
+    if not key or key.startswith("AQ.") or key.startswith("AIza"):
+        return "sk-bee-1d8aeac1b8cc98034970fb41d5084422b3973cffd4211db05b5a7897c96f1eb9"
+    key = key.strip().strip("'\"")
     # Trường hợp người dùng copy nguyên dòng từ file .env: GEMINI_API_KEY="key"
     if key.startswith("GEMINI_API_KEY="):
         key = key.split("GEMINI_API_KEY=")[1].strip()
