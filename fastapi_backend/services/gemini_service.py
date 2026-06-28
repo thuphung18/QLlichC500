@@ -15,8 +15,8 @@ import concurrent.futures
 import pdfplumber
 from dotenv import load_dotenv
 
-# Tải API key từ môi trường
-load_dotenv()
+# Tải API key từ môi trường (ép đè lên biến hệ thống nếu có)
+load_dotenv(override=True)
 
 # ─────────────────────────────────────────────
 # Hàm hỗ trợ dọn dẹp API Key nếu bị dính tên biến hoặc dấu nháy khi copy-paste
@@ -344,25 +344,46 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
             last_error = None
             for current_model in FALLBACK_MODELS:
                 try:
-                    if _USE_NEW_SDK:
-                        from google.genai import types
-                        config = types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            temperature=0.1
-                        )
-                        response = _client.models.generate_content(
-                            model=current_model,
-                            contents=prompt,
-                            config=config
-                        )
-                        return response.text
+                    if _API_KEY.startswith("sk-"):
+                        import requests
+                        headers = {
+                            "Authorization": f"Bearer {_API_KEY}",
+                            "Content-Type": "application/json"
+                        }
+                        payload = {
+                            "model": current_model,
+                            "messages": [{"role": "user", "content": prompt}],
+                            "temperature": 0.1
+                        }
+                        # Tuỳ chọn JSON format (tuỳ thuộc proxy có hỗ trợ không)
+                        payload["response_format"] = {"type": "json_object"}
+                        
+                        resp = requests.post("https://platform.beeknoee.com/api/v1/chat/completions", headers=headers, json=payload, timeout=60)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            return data["choices"][0]["message"]["content"]
+                        else:
+                            raise Exception(f"Proxy Error {resp.status_code}: {resp.text}")
                     else:
-                        model = genai.GenerativeModel(current_model)
-                        response = model.generate_content(
-                            prompt,
-                            generation_config={"response_mime_type": "application/json", "temperature": 0.1}
-                        )
-                        return response.text
+                        if _USE_NEW_SDK:
+                            from google.genai import types
+                            config = types.GenerateContentConfig(
+                                response_mime_type="application/json",
+                                temperature=0.1
+                            )
+                            response = _client.models.generate_content(
+                                model=current_model,
+                                contents=prompt,
+                                config=config
+                            )
+                            return response.text
+                        else:
+                            model = genai.GenerativeModel(current_model)
+                            response = model.generate_content(
+                                prompt,
+                                generation_config={"response_mime_type": "application/json", "temperature": 0.1}
+                            )
+                            return response.text
                 except Exception as e:
                     error_msg = str(e).lower()
                     print(f"[Gemini Service] Model {current_model} gặp lỗi khi xử lý nhóm {group_name}: {e}")

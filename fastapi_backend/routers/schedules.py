@@ -550,19 +550,24 @@ def bulk_create_schedules(request: List[CreateScheduleRequest],
             sched.startTime = norm_time(sched.startTime, "08", "00")
             sched.endTime = norm_time(sched.endTime, "11", "30")
 
+            # Nếu AI lấy lịch chiều nhưng để endTime mặc định buổi sáng thì sửa thành 17:00
             h = int(sched.startTime.split(":")[0])
-            session = "morning" if h < 12 else ("afternoon" if h < 18 else "evening")
+            if h >= 12 and sched.endTime < "12:00":
+                sched.endTime = "17:00"
 
-            # Đảm bảo start_time < end_time để không vi phạm constraint DB
-            if sched.startTime >= sched.endTime:
-                if h >= 12 and sched.endTime < "12:00":
-                    sched.endTime = "17:00"
+            # Bắt buộc start_time phải nhỏ hơn end_time
+            if sched.startTime > sched.endTime:
+                sched.startTime, sched.endTime = sched.endTime, sched.startTime
+            
+            if sched.startTime == sched.endTime:
+                end_h = int(sched.endTime.split(":")[0])
+                if end_h < 23:
+                    sched.endTime = f"{end_h + 1:02d}:{sched.endTime.split(':')[1]}"
                 else:
-                    if sched.startTime > sched.endTime:
-                        sched.startTime, sched.endTime = sched.endTime, sched.startTime
-                    else: # Nếu bằng nhau, tự động cộng thêm 1 tiếng cho endTime
-                        end_h = int(sched.endTime.split(":")[0])
-                        sched.endTime = f"{min(end_h + 1, 23):02d}:{sched.endTime.split(':')[1]}"
+                    sched.startTime = f"22:{sched.startTime.split(':')[1]}"
+                
+            # Cập nhật lại session
+            session = "morning" if h < 12 else ("afternoon" if h < 18 else "evening")
 
             days_str = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"]
             date_label = f"{days_str[dt.weekday()]}, {dt.strftime('%d/%m')}"
