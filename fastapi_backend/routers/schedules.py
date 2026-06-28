@@ -521,7 +521,12 @@ def bulk_create_schedules(request: List[CreateScheduleRequest],
 
     cursor = db.cursor()
     success_count = 0
+    skip_count = 0
     try:
+        # Lấy danh sách phòng ban để fallback khi AI không nhận ra department
+        cursor.execute("SELECT TOP 1 id FROM dbo.departments ORDER BY name")
+        default_dept_row = cursor.fetchone()
+        default_dept_id = str(default_dept_row[0]) if default_dept_row else None
         for sched in request:
             cat = sched.category
             # Lịch toàn trường thì chỉ Admin mới được phép lưu
@@ -539,7 +544,13 @@ def bulk_create_schedules(request: List[CreateScheduleRequest],
 
             days_str = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"]
             date_label = f"{days_str[dt.weekday()]}, {dt.strftime('%d/%m')}"
-            dept_id = sched.departmentId if sched.departmentId and sched.departmentId.strip() else None
+            dept_id = sched.departmentId if sched.departmentId and sched.departmentId.strip() else default_dept_id
+
+            # Bỏ qua lịch nếu vẫn không có department_id (trường hợp DB rỗng)
+            if not dept_id:
+                print(f"[Bulk] Bỏ qua lịch '{sched.title}' do không xác định được phòng ban")
+                skip_count += 1
+                continue
 
             # Lưu thông tin lịch
             cursor.execute("""
@@ -553,19 +564,25 @@ def bulk_create_schedules(request: List[CreateScheduleRequest],
                 sched.note, sched.unit, dept_id, cat, user_id
             ))
 
-            # Lưu người tham gia
+            # Lưu người tham gia (lookup full_name từ DB như create_schedule)
             if sched.participantUserIds:
                 for p_id in sched.participantUserIds:
-                    cursor.execute("""
-                        INSERT INTO dbo.schedule_participants (schedule_id, user_id)
-                        VALUES (?, ?)
-                    """, (new_id, p_id))
+                    cursor.execute("SELECT full_name FROM dbo.users WHERE id = ?", (p_id,))
+                    u_row = cursor.fetchone()
+                    if u_row:
+                        cursor.execute("""
+                            INSERT INTO dbo.schedule_participants (schedule_id, participant_name, user_id)
+                            VALUES (?, ?, ?)
+                        """, (new_id, u_row[0], p_id))
             success_count += 1
 
         db.commit()
         # Xóa toàn bộ cache sau khi lưu dữ liệu hàng loạt
         invalidate_schedules()
-        return {"success": True, "message": f"Đã thêm thành công {success_count} lịch."}
+        msg = f"Đã thêm thành công {success_count} lịch."
+        if skip_count > 0:
+            msg += f" ({skip_count} lịch bỏ qua do không xác định được phòng ban.)"
+        return {"success": True, "message": msg}
     except Exception as e:
         db.rollback()
         print(f"Bulk insert error: {e}")

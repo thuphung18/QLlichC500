@@ -11,6 +11,7 @@ import os
 import json
 import re
 import asyncio
+import concurrent.futures
 import pdfplumber
 import pymupdf4llm
 from dotenv import load_dotenv
@@ -50,6 +51,10 @@ except ImportError:
     import google.generativeai as genai
     genai.configure(api_key=_API_KEY)
     _USE_NEW_SDK = False
+
+# Thread pool riêng để gọi Gemini API song song thực sự (không bị giới hạn bởi thread pool mặc định của asyncio)
+# max_workers = 10 đủ để xử lý đồng thời tối đa 7 ngày trong tuần + dự phòng
+_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=10)
 
 
 
@@ -320,27 +325,41 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
         loop = asyncio.get_event_loop()
         
         def _call_api():
-            if _USE_NEW_SDK:
-                from google.genai import types
-                config = types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.1
-                )
-                response = _client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=prompt,
-                    config=config
-                )
-                return response.text
-            else:
-                model = genai.GenerativeModel('gemini-2.5-flash')
-                response = model.generate_content(
-                    prompt,
-                    generation_config={"response_mime_type": "application/json", "temperature": 0.1}
-                )
-                return response.text
+            FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-1.5-flash', 'gemini-1.5-pro']
+            last_error = None
+            for current_model in FALLBACK_MODELS:
+                try:
+                    if _USE_NEW_SDK:
+                        from google.genai import types
+                        config = types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            temperature=0.1
+                        )
+                        response = _client.models.generate_content(
+                            model=current_model,
+                            contents=prompt,
+                            config=config
+                        )
+                        return response.text
+                    else:
+                        model = genai.GenerativeModel(current_model)
+                        response = model.generate_content(
+                            prompt,
+                            generation_config={"response_mime_type": "application/json", "temperature": 0.1}
+                        )
+                        return response.text
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    print(f"[Gemini Service] Model {current_model} gặp lỗi khi xử lý nhóm {group_name}: {e}")
+                    # Thử model tiếp theo nếu lỗi quá tải hoặc hết token
+                    if "429" in error_msg or "resource exhausted" in error_msg or "resource_exhausted" in error_msg or "quota" in error_msg or "503" in error_msg or "unavailable" in error_msg:
+                        last_error = e
+                        continue
+                    last_error = e
+                    continue
+            raise last_error if last_error else Exception("All fallback models failed")
 
-        response_text = await loop.run_in_executor(None, _call_api)
+        response_text = await loop.run_in_executor(_EXECUTOR, _call_api)
         result_text = response_text.strip() if isinstance(response_text, str) else response_text
         
         # Dọn dẹp thẻ code block phòng hờ trường hợp API không tuân thủ hoàn toàn JSON mode
@@ -662,8 +681,8 @@ async def extract_schedules_from_file_async(file_path: str, file_ext: str, depar
         print("[Gemini Service] Không trích xuất được nội dung chữ từ file.")
         return []
         
-    # Luôn sử dụng cơ chế chia nhóm ngày để xử lý song song tốc độ cao (tránh nghẽn output token của Gemini và tránh timeout Render)
-    groups = split_markdown_into_groups(md_text)
+    # Chia nhỏ văn bản theo từng ngày riêng biệt để tăng cường xử lý song song và tốc độ
+    groups = split_markdown_by_days(md_text)
     
     # Tạo danh sách các task xử lý đồng thời bất đồng bộ bằng gemini-2.5-flash
     tasks = []
