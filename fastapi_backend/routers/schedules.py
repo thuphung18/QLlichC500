@@ -539,9 +539,17 @@ def bulk_create_schedules(request: List[CreateScheduleRequest],
             if day_index == 9:
                 day_index = 8
 
-            # Chuẩn hóa chuỗi thời gian HH:MM (VD: '8:00' -> '08:00') để so sánh đúng
-            sched.startTime = sched.startTime.zfill(5)
-            sched.endTime = sched.endTime.zfill(5)
+            # Chuẩn hóa chuỗi thời gian HH:MM bằng regex để loại bỏ khoảng trắng hoặc lỗi format
+            import re
+            def norm_time(t: str, default_h="08", default_m="00"):
+                m = re.search(r"(\d{1,2})[^\d](\d{2})", str(t))
+                if m:
+                    return f"{int(m.group(1)):02d}:{m.group(2)}"
+                return f"{default_h}:{default_m}"
+            
+            sched.startTime = norm_time(sched.startTime, "08", "00")
+            sched.endTime = norm_time(sched.endTime, "11", "30")
+
             h = int(sched.startTime.split(":")[0])
             session = "morning" if h < 12 else ("afternoon" if h < 18 else "evening")
 
