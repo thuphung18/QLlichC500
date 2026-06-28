@@ -333,7 +333,14 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
         loop = asyncio.get_event_loop()
         
         def _call_api():
-            FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-1.5-flash', 'gemini-1.5-pro']
+            FALLBACK_MODELS = [
+                'gemini-2.5-flash', 
+                'gemini-2.5-flash-lite', 
+                'gemini-1.5-flash-8b', 
+                'gemini-1.5-flash', 
+                'gemini-1.5-pro',
+                'gemini-1.0-pro'
+            ]
             last_error = None
             for current_model in FALLBACK_MODELS:
                 try:
@@ -359,8 +366,8 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
                 except Exception as e:
                     error_msg = str(e).lower()
                     print(f"[Gemini Service] Model {current_model} gặp lỗi khi xử lý nhóm {group_name}: {e}")
-                    # Thử model tiếp theo nếu lỗi quá tải hoặc hết token
-                    if "429" in error_msg or "resource exhausted" in error_msg or "resource_exhausted" in error_msg or "quota" in error_msg or "503" in error_msg or "unavailable" in error_msg:
+                    # Thử model tiếp theo nếu lỗi quá tải, hết token, hoặc model không tồn tại (404)
+                    if "429" in error_msg or "resource exhausted" in error_msg or "resource_exhausted" in error_msg or "quota" in error_msg or "503" in error_msg or "unavailable" in error_msg or "404" in error_msg or "not found" in error_msg:
                         last_error = e
                         continue
                     last_error = e
