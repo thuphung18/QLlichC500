@@ -539,15 +539,22 @@ def bulk_create_schedules(request: List[CreateScheduleRequest],
             if day_index == 9:
                 day_index = 8
 
+            # Chuẩn hóa chuỗi thời gian HH:MM (VD: '8:00' -> '08:00') để so sánh đúng
+            sched.startTime = sched.startTime.zfill(5)
+            sched.endTime = sched.endTime.zfill(5)
             h = int(sched.startTime.split(":")[0])
             session = "morning" if h < 12 else ("afternoon" if h < 18 else "evening")
 
-            # Đảm bảo start_time <= end_time để không vi phạm constraint DB
-            if sched.startTime > sched.endTime:
+            # Đảm bảo start_time < end_time để không vi phạm constraint DB
+            if sched.startTime >= sched.endTime:
                 if h >= 12 and sched.endTime < "12:00":
                     sched.endTime = "17:00"
                 else:
-                    sched.startTime, sched.endTime = sched.endTime, sched.startTime
+                    if sched.startTime > sched.endTime:
+                        sched.startTime, sched.endTime = sched.endTime, sched.startTime
+                    else: # Nếu bằng nhau, tự động cộng thêm 1 tiếng cho endTime
+                        end_h = int(sched.endTime.split(":")[0])
+                        sched.endTime = f"{min(end_h + 1, 23):02d}:{sched.endTime.split(':')[1]}"
 
             days_str = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"]
             date_label = f"{days_str[dt.weekday()]}, {dt.strftime('%d/%m')}"

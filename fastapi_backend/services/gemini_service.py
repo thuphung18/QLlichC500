@@ -13,7 +13,6 @@ import re
 import asyncio
 import concurrent.futures
 import pdfplumber
-import pymupdf4llm
 from dotenv import load_dotenv
 
 # Tải API key từ môi trường
