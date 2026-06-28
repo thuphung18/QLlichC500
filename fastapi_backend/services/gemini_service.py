@@ -103,8 +103,10 @@ def extract_schedules_from_text(text: str, departments: list) -> list:
     (Ít dùng hơn phương pháp xử lý song song phân chia theo nhóm ngày mới).
     """
     dept_info = json.dumps(departments, ensure_ascii=False)
+    from datetime import datetime
+    current_year = datetime.now().year
     prompt = f"""
-Bạn là một trợ lý AI phân tích lịch công tác. Nhiệm vụ của bạn là đọc nội dung lịch (dạng text được trích xuất từ PDF) và trích xuất thành một mảng (array) các object JSON.
+Bạn là một trợ lý AI phân tích lịch công tác. Nhiệm vụ của bạn là đọc nội dung lịch (dạng text được trích xuất từ PDF) và trích xuất thành một mảng (array) các object JSON. Năm hiện tại là {current_year}.
 
 DANH SÁCH PHÒNG BAN TRONG HỆ THỐNG:
 {dept_info}
@@ -115,7 +117,7 @@ Quy tắc trích xuất cho mỗi lịch (trả về đúng định dạng JSON 
     "title": "Nội dung công việc (chuỗi)",
     "teacher": "Người chủ trì (tên người, ví dụ: Đ/c Vũ (PGĐ))",
     "room": "Địa điểm (nếu có, không có để chuỗi rỗng)",
-    "scheduleDate": "Ngày diễn ra (định dạng YYYY-MM-DD). Hãy tự suy luận ngày dựa vào tiêu đề Lịch tuần hoặc các dấu hiệu ngày tháng.",
+    "scheduleDate": "Ngày diễn ra (định dạng YYYY-MM-DD). NẾU KHÔNG CÓ NĂM RÕ RÀNG, HÃY MẶC ĐỊNH SỬ DỤNG NĂM {current_year}.",
     "startTime": "Giờ bắt đầu (định dạng HH:MM, nếu không có để 08:00)",
     "endTime": "Giờ kết thúc (định dạng HH:MM, nếu không có: nếu ca sáng để 11:30, ca chiều để 17:00)",
     "note": "Thành phần dự hoặc ghi chú (chuỗi)",
@@ -309,8 +311,10 @@ async def extract_single_chunk(group_name: str, chunk_text: str, departments: li
     Sử dụng model 'gemini-2.5-flash-lite' để có tốc độ phản hồi nhanh nhất và hạn mức gọi API tốt nhất.
     Chạy bất đồng bộ thông qua run_in_executor để tránh block thread xử lý chính.
     """
+    from datetime import datetime
+    current_year = datetime.now().year
     prompt = f"""
-Bạn là một trợ lý AI phân tích lịch công tác. Nhiệm vụ của bạn là đọc nội dung lịch dưới đây (dạng Markdown) và trích xuất thành danh sách các object JSON rút gọn.
+Bạn là một trợ lý AI phân tích lịch công tác. Nhiệm vụ của bạn là đọc nội dung lịch dưới đây (dạng Markdown) và trích xuất thành danh sách các object JSON rút gọn. Năm hiện tại là {current_year}.
 
 Quy tắc trích xuất (CHỈ trả về JSON array trực tiếp `[...]`):
 [
@@ -318,7 +322,7 @@ Quy tắc trích xuất (CHỈ trả về JSON array trực tiếp `[...]`):
     "title": "Nội dung công việc (chuỗi)",
     "teacher": "Người chủ trì (tên người, ví dụ: Đ/c Vũ (PGĐ))",
     "room": "Địa điểm (nếu có, không có để chuỗi rỗng)",
-    "scheduleDate": "Ngày diễn ra (định dạng YYYY-MM-DD). Hãy suy luận ngày dựa vào mốc thời gian trong văn bản của từng công việc.",
+    "scheduleDate": "Ngày diễn ra (định dạng YYYY-MM-DD). Hãy suy luận ngày dựa vào mốc thời gian trong văn bản của từng công việc. NẾU KHÔNG CÓ NĂM RÕ RÀNG, HÃY MẶC ĐỊNH SỬ DỤNG NĂM {current_year}.",
     "startTime": "Giờ bắt đầu (định dạng HH:MM, mặc định 08:00)",
     "endTime": "Giờ kết thúc (định dạng HH:MM, mặc định 11:30 cho ca sáng và 17:00 cho ca chiều)",
     "note": "Thành phần dự hoặc ghi chú (chuỗi)",
