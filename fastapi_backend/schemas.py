@@ -18,6 +18,18 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RegisterRequest(BaseModel):
+    """Dữ liệu yêu cầu đăng ký bằng Google/Gmail."""
+    email: str
+    fullName: str
+    departmentId: str
+
+
+class GoogleLoginRequest(BaseModel):
+    """Dữ liệu yêu cầu đăng nhập bằng Google Sign-In."""
+    email: str
+
+
 class UserProfile(BaseModel):
     """Thông tin chi tiết cá nhân người dùng trả về sau khi đăng nhập thành công."""
     id: str

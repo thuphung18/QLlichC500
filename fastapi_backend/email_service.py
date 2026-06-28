@@ -49,3 +49,35 @@ def send_otp_email(recipient_email: str, otp_code: str):
     except Exception as e:
         print(f"Failed to send email: {e}")
 
+
+def send_admin_notification_email(new_user_email: str, full_name: str, department_name: str):
+    """
+    Gửi email thông báo cho Admin (thuphung18122005@gmail.com) khi có người dùng mới đăng ký.
+    """
+    admin_email = "thuphung18122005@gmail.com"
+    try:
+        msg = EmailMessage()
+        msg['Subject'] = 'Yêu cầu phê duyệt tài khoản mới'
+        msg['From'] = SMTP_USER
+        msg['To'] = admin_email
+        
+        msg.set_content(
+            f"Kính gửi Admin,\n\n"
+            f"Hệ thống vừa nhận được một yêu cầu đăng ký tài khoản mới với thông tin sau:\n"
+            f"- Họ và tên: {full_name}\n"
+            f"- Email (Google): {new_user_email}\n"
+            f"- Phòng ban / Khoa: {department_name}\n\n"
+            f"Tài khoản hiện đang ở trạng thái 'Chờ duyệt' (is_active = 0).\n"
+            f"Vui lòng truy cập hệ thống Quản trị viên để kiểm tra và kích hoạt tài khoản này.\n\n"
+            f"Trân trọng,\n"
+            f"Hệ thống QL Lịch"
+        )
+
+        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
+            server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+            
+        print(f"Sent Admin Notification for {new_user_email}")
+    except Exception as e:
+        print(f"Failed to send admin notification email: {e}")
+

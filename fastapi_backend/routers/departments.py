@@ -57,6 +57,28 @@ def _require_admin(role: str):
 # 2. Các Endpoint điều hướng (Controllers)
 # ─────────────────────────────────────────────
 
+@router.get("/public", response_model=list[Department])
+def get_departments_public(db=Depends(get_db)):
+    """
+    API Công khai: Lấy danh sách các phòng ban/khoa để hiển thị ở màn hình Đăng ký.
+    Không yêu cầu xác thực Token. Sử dụng Cache để tối ưu hiệu năng.
+    """
+    cache_key = "departments:all"
+    cached = department_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    cursor = db.cursor()
+    try:
+        cursor.execute("SELECT id, name FROM dbo.departments ORDER BY name")
+        rows = cursor.fetchall()
+        result = [Department(id=str(row[0]), name=str(row[1])) for row in rows]
+        department_cache.set(cache_key, result)
+        return result
+    finally:
+        cursor.close()
+
+
 @router.get("", response_model=list[Department])
 def get_departments(user_id: str, db=Depends(get_db)):
     """

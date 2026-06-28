@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 import random
 import uuid
 from datetime import datetime, timedelta
-from email_service import send_otp_email
+from email_service import send_otp_email, send_admin_notification_email
 from pydantic import BaseModel
 import pyodbc
 from database import get_db
@@ -20,7 +20,8 @@ from schemas import (
     SendResetCodeRequest, SendResetCodeResponse,
     VerifyResetCodeRequest, VerifyResetCodeResponse,
     ResetPasswordRequest, ResetPasswordResponse,
-    FcmTokenRequest, RefreshTokenRequest, TokenResponse
+    FcmTokenRequest, RefreshTokenRequest, TokenResponse,
+    RegisterRequest, GoogleLoginRequest
 )
 from dependencies import verify_session_token
 from core.security import create_access_token, create_refresh_token, SECRET_KEY, ALGORITHM
@@ -356,4 +357,130 @@ def refresh_token(request: RefreshTokenRequest, db: pyodbc.Connection = Depends(
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         cursor.close()
+
+
+@router.post("/register", response_model=dict)
+def register(request: RegisterRequest, background_tasks: BackgroundTasks, db: pyodbc.Connection = Depends(get_db)):
+    """
+    API Đăng ký tài khoản (dành cho người dùng mới sử dụng Gmail/Google).
+    Tài khoản được tạo sẽ ở trạng thái chờ duyệt (is_active = 0) và có email thông báo cho Admin.
+    """
+    if not request.email.endswith("@gmail.com"):
+        raise HTTPException(status_code=400, detail="Vui lòng sử dụng tài khoản Gmail (@gmail.com)")
+    
+    cursor = db.cursor()
+    try:
+        # Kiểm tra xem email đã được đăng ký chưa
+        cursor.execute("SELECT id FROM dbo.users WHERE email = ?", (request.email,))
+        if cursor.fetchone():
+            raise HTTPException(status_code=400, detail="Email này đã được đăng ký trên hệ thống")
+        
+        # Lấy tên phòng ban để gửi email
+        cursor.execute("SELECT name FROM dbo.departments WHERE id = ?", (request.departmentId,))
+        dept_row = cursor.fetchone()
+        if not dept_row:
+            raise HTTPException(status_code=400, detail="Phòng ban không hợp lệ")
+        dept_name = dept_row[0]
+
+        # Tự động tạo username từ phần đầu của email
+        base_username = request.email.split("@")[0]
+        username = base_username
+        
+        # Nếu username trùng, thêm một số ngẫu nhiên vào sau
+        while True:
+            cursor.execute("SELECT id FROM dbo.users WHERE username = ?", (username,))
+            if not cursor.fetchone():
+                break
+            username = f"{base_username}{random.randint(100, 9999)}"
+
+        user_id = str(uuid.uuid4())
+        password_hash = "GOOGLE_AUTH"
+        
+        cursor.execute("""
+            INSERT INTO dbo.users (
+                id, username, password_hash, full_name, role, unit, department_id, email, phone, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        """, (
+            user_id, username, password_hash,
+            request.fullName, 'nhân viên', 'Học viện ANND',
+            request.departmentId, request.email, None
+        ))
+        db.commit()
+
+        # Bắn thông báo ngầm cho Admin
+        background_tasks.add_task(send_admin_notification_email, request.email, request.fullName, dept_name)
+        
+        return {"success": True, "message": "Đăng ký thành công. Vui lòng chờ Quản trị viên phê duyệt tài khoản!"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+
+
+@router.post("/google-login", response_model=LoginResponse)
+def google_login(request: GoogleLoginRequest, db: pyodbc.Connection = Depends(get_db)):
+    """
+    API xác thực khi ấn nút Google Sign-In.
+    - Nếu email chưa tồn tại: Báo lỗi 404 (để App chuyển sang màn hình Register).
+    - Nếu tồn tại nhưng chưa duyệt: Báo lỗi 403.
+    - Nếu tồn tại và đã duyệt: Trả về Access Token.
+    """
+    cursor = db.cursor()
+    try:
+        # Lấy thông tin user dựa trên email (bất kể password là gì vì đã xác thực Google trên Frontend)
+        cursor.execute("""
+            SELECT 
+                u.id, u.username, u.full_name, u.role, u.unit, u.department_id,
+                d.name as departmentName, u.email, u.phone, u.avatar_url, u.is_active
+            FROM dbo.users u
+            LEFT JOIN dbo.departments d ON u.department_id = d.id
+            WHERE u.email = ?
+        """, (request.email,))
+        row = cursor.fetchone()
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="Tài khoản chưa tồn tại, vui lòng đăng ký")
+            
+        if not row.is_active:
+            raise HTTPException(status_code=403, detail="Tài khoản đang chờ Quản trị viên phê duyệt")
+            
+        user_id = str(row.id)
+        role = row.role
+        
+        # Sinh Token
+        access_token = create_access_token(data={"sub": user_id, "role": role})
+        refresh_token = create_refresh_token(data={"sub": user_id})
+        
+        cursor.execute("UPDATE dbo.users SET refresh_token = ? WHERE id = ?", (refresh_token, user_id))
+        db.commit()
+        
+        user_profile = UserProfile(
+            id=user_id,
+            username=row.username,
+            fullName=row.full_name,
+            role=role,
+            unit=row.unit if row.unit else "",
+            departmentId=str(row.department_id) if row.department_id else "",
+            departmentName=str(row.departmentName) if row.departmentName else "",
+            email=row.email,
+            phone=row.phone,
+            avatarUrl=row.avatar_url
+        )
+        
+        return LoginResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user=user_profile
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+
 
