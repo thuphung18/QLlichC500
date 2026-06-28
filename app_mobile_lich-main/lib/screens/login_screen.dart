@@ -15,6 +15,8 @@ import '../services/biometric_service.dart';
 import '../theme/app_colors.dart';
 import 'forgot_password_screen.dart';
 import 'main_shell.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'register_screen.dart';
 
 // LoginScreen là màn hình đăng nhập đầu tiên của app.
 // Chức năng:
@@ -153,7 +155,7 @@ class _LoginScreenState extends State<LoginScreen> {
         if (settings.authorizationStatus == AuthorizationStatus.authorized) {
           String? token = await messaging.getToken();
           if (token != null) {
-            final scheduleRepo = ApiScheduleRepository(currentUser: user!);
+            final scheduleRepo = ApiScheduleRepository(currentUser: user);
             await scheduleRepo.updateFcmToken(token);
           }
         }
@@ -262,6 +264,80 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _googleLogin() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final GoogleSignIn googleSignIn = GoogleSignIn(
+        clientId: '734831076442-obad39spt67l8aggj3l4tj5dhvelvamt.apps.googleusercontent.com',
+      );
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+
+      if (googleUser == null) {
+        // User canceled the login flow
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      final email = googleUser.email;
+      final displayName = googleUser.displayName ?? email;
+
+      try {
+        final user = await _authRepository.googleLogin(email: email);
+
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+        });
+
+        if (user != null) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => MainShell(
+                currentUser: user,
+              ),
+            ),
+          );
+        }
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+        });
+        
+        final errorMessage = e.toString();
+        if (errorMessage.contains('404') || errorMessage.contains('chưa tồn tại') || errorMessage.contains('chưa đăng ký')) {
+           // Đi tới màn hình Đăng ký
+           Navigator.push(
+             context,
+             MaterialPageRoute(
+               builder: (context) => RegisterScreen(
+                 email: email,
+                 fullName: displayName,
+               ),
+             ),
+           );
+        } else {
+           setState(() {
+             _errorMessage = errorMessage.replaceAll('Exception: ', '');
+           });
+        }
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Lỗi Google Sign-In: $error';
+      });
+    }
   }
 
   void _goToForgotPassword() {
@@ -509,6 +585,37 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ],
                         ],
+                      ),
+                      
+                      const SizedBox(height: 16),
+                      
+                      // Nút đăng nhập Google
+                      SizedBox(
+                        width: double.infinity,
+                        height: 54,
+                        child: OutlinedButton.icon(
+                          onPressed: _isLoading ? null : _googleLogin,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Theme.of(context).textTheme.bodyLarge?.color,
+                            side: const BorderSide(color: Colors.grey, width: 1),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          icon: Image.network(
+                            'https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg',
+                            height: 24,
+                            width: 24,
+                            errorBuilder: (context, error, stackTrace) => const Icon(Icons.g_mobiledata, size: 36),
+                          ),
+                          label: const Text(
+                            'Đăng nhập bằng Google',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),

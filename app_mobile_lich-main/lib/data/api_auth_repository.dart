@@ -13,6 +13,23 @@ class ApiAuthRepository implements AuthRepository {
   /// Lấy đường dẫn API gốc từ file cấu hình
   final String _baseUrl = ApiConfig.baseUrl;
 
+  @override
+  Future<List<Map<String, dynamic>>> getPublicDepartments() async {
+    try {
+      final response = await HttpClient.get(
+        Uri.parse('$_baseUrl/departments/public'),
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((item) => Map<String, dynamic>.from(item)).toList();
+      }
+      return [];
+    } catch (e) {
+      print('getPublicDepartments error: $e');
+      return [];
+    }
+  }
+
   /// Gọi API POST để đăng nhập hệ thống.
   /// Nếu đăng nhập thành công, trả về đối tượng [UserProfile] chứa thông tin user.
   /// Nếu thất bại hoặc sai mật khẩu, trả về `null`.
@@ -137,6 +154,86 @@ class ApiAuthRepository implements AuthRepository {
       return data['success'] == true;
     } catch (e) {
       return false;
+    }
+  }
+
+  /// Đăng nhập bằng tài khoản Google thông qua Backend API
+  @override
+  Future<UserProfile?> googleLogin({
+    required String email,
+  }) async {
+    try {
+      final response = await HttpClient.post(
+        Uri.parse('$_baseUrl/auth/google-login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email,
+        }),
+      );
+
+      // 200 OK: Đăng nhập thành công
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        
+        final accessToken = data['access_token'];
+        final refreshToken = data['refresh_token'];
+        if (accessToken != null && refreshToken != null) {
+          await TokenStorage.saveTokens(accessToken, refreshToken);
+        }
+        
+        final userJson = Map<String, dynamic>.from(data['user']);
+        userJson['sessionToken'] = accessToken;
+        return UserProfile.fromJson(userJson);
+      }
+      
+      // Các mã lỗi như 403 (chưa duyệt) hoặc 404 (chưa đăng ký) sẽ được UI bắt qua throw ngoại lệ
+      if (response.statusCode == 403 || response.statusCode == 404) {
+         final errorData = jsonDecode(response.body);
+         throw Exception(errorData['detail'] ?? 'Lỗi đăng nhập Google');
+      }
+      return null;
+    } catch (e) {
+      print('Google login error: $e');
+      rethrow; // Bắn lỗi lên trên để UI xử lý (hiển thị Dialog)
+    }
+  }
+
+  /// Gọi API POST để đăng ký tài khoản mới bằng Google/Gmail
+  @override
+  Future<RegisterResult> register({
+    required String email,
+    required String fullName,
+    required String departmentId,
+  }) async {
+    try {
+      final response = await HttpClient.post(
+        Uri.parse('$_baseUrl/auth/register'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email,
+          'fullName': fullName,
+          'departmentId': departmentId,
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+      
+      if (response.statusCode == 200) {
+        return RegisterResult(
+          success: data['success'] ?? false,
+          message: data['message'] ?? 'Đăng ký thành công',
+        );
+      } else {
+        return RegisterResult(
+          success: false,
+          message: data['detail'] ?? 'Đăng ký thất bại',
+        );
+      }
+    } catch (e) {
+      return RegisterResult(
+        success: false,
+        message: 'Lỗi kết nối: $e',
+      );
     }
   }
 }

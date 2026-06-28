@@ -371,9 +371,13 @@ def register(request: RegisterRequest, background_tasks: BackgroundTasks, db: py
     cursor = db.cursor()
     try:
         # Kiểm tra xem email đã được đăng ký chưa
-        cursor.execute("SELECT id FROM dbo.users WHERE email = ?", (request.email,))
-        if cursor.fetchone():
-            raise HTTPException(status_code=400, detail="Email này đã được đăng ký trên hệ thống")
+        cursor.execute("SELECT id, is_active FROM dbo.users WHERE email = ?", (request.email,))
+        existing_user = cursor.fetchone()
+        if existing_user:
+            if existing_user.is_active == 1:
+                raise HTTPException(status_code=400, detail="Tài khoản của bạn đã được phê duyệt. Vui lòng quay lại và ấn 'Đăng nhập bằng Google'.")
+            else:
+                raise HTTPException(status_code=400, detail="Email này đã đăng ký và đang chờ Quản trị viên phê duyệt. Vui lòng không đăng ký lại.")
         
         # Lấy tên phòng ban để gửi email
         cursor.execute("SELECT name FROM dbo.departments WHERE id = ?", (request.departmentId,))

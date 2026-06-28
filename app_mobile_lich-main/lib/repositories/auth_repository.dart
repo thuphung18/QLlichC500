@@ -5,6 +5,9 @@ import '../models/user_profile.dart';
 /// phải triển khai các phương thức cốt lõi liên quan đến xác thực.
 /// Sử dụng interface giúp ta dễ dàng chuyển đổi giữa việc xài Fake Data (Demo) và xài API thật.
 abstract class AuthRepository {
+  /// Lấy danh sách phòng ban công khai để hiển thị trên form Đăng ký
+  Future<List<Map<String, dynamic>>> getPublicDepartments();
+
   /// Đăng nhập bằng tên đăng nhập và mật khẩu
   Future<UserProfile?> login({
     required String username,
@@ -26,6 +29,29 @@ abstract class AuthRepository {
   Future<bool> resetPassword({
     required String resetToken,
     required String newPassword,
+  });
+
+  /// Đăng nhập bằng tài khoản Google
+  Future<UserProfile?> googleLogin({
+    required String email,
+  });
+
+  /// Đăng ký tài khoản mới bằng Google/Gmail
+  Future<RegisterResult> register({
+    required String email,
+    required String fullName,
+    required String departmentId,
+  });
+}
+
+/// [RegisterResult] là lớp chứa kết quả trả về khi người dùng đăng ký tài khoản.
+class RegisterResult {
+  final bool success;
+  final String message;
+
+  const RegisterResult({
+    required this.success,
+    required this.message,
   });
 }
 
