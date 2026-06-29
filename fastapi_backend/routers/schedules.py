@@ -359,6 +359,55 @@ def create_schedule(req: CreateScheduleRequest, user_id: str = "u001",
         cursor.close()
 
 
+@router.delete("/clear-all", response_model=dict)
+def clear_all_schedules(user_id: str, db: pyodbc.Connection = Depends(get_db)):
+    """
+    Xóa toàn bộ lịch trên hệ thống.
+    - Admin: Xóa sạch toàn bộ lịch (xóa cứng).
+    - Manager: Xóa toàn bộ lịch thuộc khoa/phòng ban của mình.
+    """
+    user_info = _get_user_info(user_id, db)
+    role = user_info["role"]
+    user_dept_id = user_info["departmentId"]
+
+    if not _can_create_schedule(role):
+        raise HTTPException(status_code=403, detail="Bạn không có quyền xóa lịch")
+
+    cursor = db.cursor()
+    try:
+        if _is_admin(role):
+            # Xóa cứng toàn bộ tham gia và lịch
+            cursor.execute("DELETE FROM dbo.schedule_participants")
+            cursor.execute("DELETE FROM dbo.schedules")
+            db.commit()
+            invalidate_schedules()
+            return {"success": True, "message": "Đã xóa toàn bộ lịch trên hệ thống"}
+        elif _is_manager(role):
+            if not user_dept_id:
+                raise HTTPException(status_code=400, detail="Không xác định được phòng ban của bạn")
+            
+            # Xóa lịch của khoa/phòng
+            cursor.execute("""
+                DELETE p FROM dbo.schedule_participants p
+                INNER JOIN dbo.schedules s ON p.schedule_id = s.id
+                WHERE s.department_id = ?
+            """, (user_dept_id,))
+            
+            cursor.execute("DELETE FROM dbo.schedules WHERE department_id = ?", (user_dept_id,))
+            db.commit()
+            invalidate_schedules(user_dept_id)
+            return {"success": True, "message": "Đã xóa toàn bộ lịch của đơn vị bạn"}
+        else:
+            raise HTTPException(status_code=403, detail="Bạn không có quyền thực hiện chức năng này")
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+
+
 @router.delete("/{schedule_id}", response_model=dict)
 def delete_schedule(schedule_id: str, user_id: str,
                     db: pyodbc.Connection = Depends(get_db)):
@@ -413,55 +462,6 @@ def delete_schedule(schedule_id: str, user_id: str,
 
 # ─────────────────────────────────────────────
 # 4. Các Endpoint tích hợp AI (Gemini AI Parser)
-@router.delete("/clear-all", response_model=dict)
-def clear_all_schedules(user_id: str, db: pyodbc.Connection = Depends(get_db)):
-    """
-    Xóa toàn bộ lịch trên hệ thống.
-    - Admin: Xóa sạch toàn bộ lịch (xóa cứng).
-    - Manager: Xóa toàn bộ lịch thuộc khoa/phòng ban của mình.
-    """
-    user_info = _get_user_info(user_id, db)
-    role = user_info["role"]
-    user_dept_id = user_info["departmentId"]
-
-    if not _can_create_schedule(role):
-        raise HTTPException(status_code=403, detail="Bạn không có quyền xóa lịch")
-
-    cursor = db.cursor()
-    try:
-        if _is_admin(role):
-            # Xóa cứng toàn bộ tham gia và lịch
-            cursor.execute("DELETE FROM dbo.schedule_participants")
-            cursor.execute("DELETE FROM dbo.schedules")
-            db.commit()
-            invalidate_schedules()
-            return {"success": True, "message": "Đã xóa toàn bộ lịch trên hệ thống"}
-        elif _is_manager(role):
-            if not user_dept_id:
-                raise HTTPException(status_code=400, detail="Không xác định được phòng ban của bạn")
-            
-            # Xóa lịch của khoa/phòng
-            cursor.execute("""
-                DELETE p FROM dbo.schedule_participants p
-                INNER JOIN dbo.schedules s ON p.schedule_id = s.id
-                WHERE s.department_id = ?
-            """, (user_dept_id,))
-            
-            cursor.execute("DELETE FROM dbo.schedules WHERE department_id = ?", (user_dept_id,))
-            db.commit()
-            invalidate_schedules(user_dept_id)
-            return {"success": True, "message": "Đã xóa toàn bộ lịch của đơn vị bạn"}
-        else:
-            raise HTTPException(status_code=403, detail="Bạn không có quyền thực hiện chức năng này")
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        cursor.close()
-
-
 # ─────────────────────────────────────────────
 
 import os
