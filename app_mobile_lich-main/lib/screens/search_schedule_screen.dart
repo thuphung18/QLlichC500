@@ -31,6 +31,17 @@ class _SearchScheduleScreenState extends State<SearchScheduleScreen> {
   String _keyword = '';
   Future<List<ScheduleItem>>? _schedulesFuture;
   late StreamSubscription<String> _eventSubscription;
+  Timer? _debounce;
+
+  void _onSearchChanged(String query) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      setState(() {
+        _keyword = query;
+        _loadSchedules();
+      });
+    });
+  }
 
   @override
   void initState() {
@@ -51,6 +62,7 @@ class _SearchScheduleScreenState extends State<SearchScheduleScreen> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _eventSubscription.cancel();
     _controller.dispose();
     super.dispose();
@@ -98,12 +110,7 @@ class _SearchScheduleScreenState extends State<SearchScheduleScreen> {
 
             TextField(
               controller: _controller,
-              onChanged: (value) {
-                setState(() {
-                  _keyword = value;
-                  _loadSchedules();
-                });
-              },
+              onChanged: _onSearchChanged,
               decoration: InputDecoration(
                 hintText: 'Nhập từ khóa tìm kiếm...',
                 prefixIcon: const Icon(Icons.search),

@@ -164,6 +164,27 @@ class ApiScheduleRepository implements ScheduleRepository {
       return false;
     }
   }
+
+  /// Gọi API để xóa toàn bộ lịch
+  @override
+  Future<bool> clearAllSchedules() async {
+    try {
+      final response = await HttpClient.delete(
+        Uri.parse('$_baseUrl/schedules/clear-all?user_id=${currentUser.id}'),
+        headers: {'Authorization': 'Bearer ${currentUser.sessionToken}'},
+      );
+      
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        EventBus().fireScheduleDeleted('ALL');
+        return true;
+      }
+      print('Clear all schedules failed: ${response.body}');
+      return false;
+    } catch (e) {
+      print('Clear all schedules error: $e');
+      return false;
+    }
+  }
   /// Tải file mềm (PDF) lên để AI đọc và trả về danh sách lịch preview
   Future<List<CreateScheduleRequest>> uploadScheduleFile(String filePath) async {
     try {

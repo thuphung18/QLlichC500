@@ -34,4 +34,9 @@ abstract class ScheduleRepository {
 
   /// Gửi lệnh xóa lịch biểu (Chỉ dành cho người tạo hoặc admin)
   Future<bool> deleteSchedule(String scheduleId);
+
+  /// Xóa toàn bộ lịch (Admin xóa hết, Trưởng khoa xóa phòng/khoa của mình)
+  Future<bool> clearAllSchedules();
+
+  /// Đăng xuất, dọn dẹp data
 }

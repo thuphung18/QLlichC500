@@ -184,6 +184,59 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
     }
   }
 
+  Future<void> _clearAllSchedules() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Xóa toàn bộ lịch?'),
+        content: const Text('Hành động này sẽ xóa vĩnh viễn toàn bộ lịch (thuộc quyền quản lý của bạn). Bạn có chắc chắn muốn tiếp tục?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Hủy'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Xóa tất cả'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final success = await widget.repository.clearAllSchedules();
+    if (!mounted) return;
+    Navigator.pop(context); // Tắt loading
+
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã xóa toàn bộ lịch thành công')),
+      );
+      setState(() {
+        _loadSchedules();
+      });
+      widget.repository.getMySchedules().then((mySchedules) async {
+        final notificationService = NotificationService();
+        await notificationService.updateScheduledNotifications(mySchedules);
+      }).catchError((e) {
+        print("Lỗi cập nhật thông báo: $e");
+      });
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Xóa thất bại, vui lòng thử lại')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final canManage = RoleHelper.canManageSchedule(widget.repository.currentUser.role);
@@ -251,48 +304,58 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
                   color: Theme.of(context).textTheme.bodyMedium?.color ?? const Color(0xFF64748B),
                 ),
               ),
-              TextButton.icon(
-                onPressed: () async {
-                  showDialog(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (context) => const Center(
-                      child: CircularProgressIndicator(),
+              Row(
+                children: [
+                  if (canManage)
+                    IconButton(
+                      icon: const Icon(Icons.delete_sweep, color: Colors.red),
+                      tooltip: 'Xóa toàn bộ lịch',
+                      onPressed: _clearAllSchedules,
                     ),
-                  );
-                  try {
-                    final allSchedules = await widget.repository.getAllSchedules();
-                    if (context.mounted) Navigator.pop(context);
-                    
-                    if (allSchedules.isEmpty) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Không có lịch biểu nào trong tuần này để xuất.')),
-                        );
-                      }
-                      return;
-                    }
-                    
-                    final filename = widget.isAdmin ? 'lich_tuan_toan_truong.ics' : 'lich_tuan_ca_nhan.ics';
-                    await CalendarExportHelper.exportToIcs(allSchedules, filename);
-                  } catch (e) {
-                    if (context.mounted) {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Lỗi xuất lịch tuần: $e')),
+                  TextButton.icon(
+                    onPressed: () async {
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (context) => const Center(
+                          child: CircularProgressIndicator(),
+                        ),
                       );
-                    }
-                  }
-                },
-                icon: const Icon(Icons.download, size: 18),
-                label: const Text('Tải lịch tuần (.ics)', style: TextStyle(fontWeight: FontWeight.bold)),
-                style: TextButton.styleFrom(
-                  foregroundColor: Theme.of(context).colorScheme.primary,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                      try {
+                        final allSchedules = await widget.repository.getAllSchedules();
+                        if (context.mounted) Navigator.pop(context);
+                        
+                        if (allSchedules.isEmpty) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Không có lịch biểu nào trong tuần này để xuất.')),
+                            );
+                          }
+                          return;
+                        }
+                        
+                        final filename = widget.isAdmin ? 'lich_tuan_toan_truong.ics' : 'lich_tuan_ca_nhan.ics';
+                        await CalendarExportHelper.exportToIcs(allSchedules, filename);
+                      } catch (e) {
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Lỗi xuất lịch tuần: $e')),
+                          );
+                        }
+                      }
+                    },
+                    icon: const Icon(Icons.download, size: 18),
+                    label: const Text('Tải lịch tuần', style: TextStyle(fontWeight: FontWeight.bold)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Theme.of(context).colorScheme.primary,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ],
           ),
