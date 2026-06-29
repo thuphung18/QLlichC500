@@ -235,7 +235,7 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
         children: [
           AppHeader(
             title: widget.isAdmin ? 'LỊCH TOÀN TRƯỜNG' : 'LỊCH TUẦN',
-            subtitle: 'Từ 08/6 - 14/6/2026',
+            subtitle: _currentWeekRangeText(),
             icon: Icons.calendar_month,
             accentColor: Theme.of(context).colorScheme.primary,
           ),
@@ -373,6 +373,41 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
         ],
       ),
     );
+  }
+
+  // Hàm format ngày ngắn để hiển thị trên header.
+  // Ví dụ: DateTime(2026, 6, 29) -> "29/6"
+  String _formatShortDate(DateTime date) {
+    return '${date.day}/${date.month}';
+  }
+
+  // Hàm lấy khoảng tuần hiện tại theo thời gian thật của thiết bị.
+  // Ví dụ:
+  // Nếu hôm nay nằm trong tuần 29/6 - 5/7/2026
+  // thì hàm này trả về: "Từ 29/6 - 5/7/2026"
+  String _currentWeekRangeText() {
+    final today = DateTime.now();
+
+    final currentDate = DateTime(
+      today.year,
+      today.month,
+      today.day,
+    );
+
+    final monday = currentDate.subtract(
+      Duration(days: currentDate.weekday - DateTime.monday),
+    );
+
+    final sunday = monday.add(const Duration(days: 6));
+
+    // Nếu tuần nằm trong cùng một năm thì chỉ cần hiện năm ở cuối.
+    if (monday.year == sunday.year) {
+      return 'Từ ${_formatShortDate(monday)} - ${_formatShortDate(sunday)}/${sunday.year}';
+    }
+
+    // Nếu tuần vắt qua năm mới, ví dụ 30/12/2026 - 05/01/2027,
+    // thì hiện đủ năm cho cả 2 đầu để tránh nhầm.
+    return 'Từ ${_formatShortDate(monday)}/${monday.year} - ${_formatShortDate(sunday)}/${sunday.year}';
   }
 
   List<ScheduleItem> _filterBySession(

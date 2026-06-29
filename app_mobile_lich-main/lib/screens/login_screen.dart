@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -361,32 +362,20 @@ class _LoginScreenState extends State<LoginScreen> {
             padding: const EdgeInsets.all(22),
             child: Column(
               children: [
-                Container(
+                SizedBox(
                   width: 120,
                   height: 120,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(20),
-                        blurRadius: 24,
-                        offset: const Offset(0, 12),
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
+                  child: ClipOval(
                     child: Image.asset(
                       'assets/images/logo.png',
+                      width: 120,
+                      height: 120,
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          color: AppColors.primaryLight,
-                          child: const Icon(
-                            Icons.school,
-                            color: Colors.white,
-                            size: 50,
-                          ),
+                        return const Icon(
+                          Icons.school,
+                          color: Colors.white,
+                          size: 70,
                         );
                       },
                     ),
@@ -588,57 +577,66 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       
                       const SizedBox(height: 16),
-                      
-                      // Nút đăng nhập Google
-                      SizedBox(
-                        width: double.infinity,
-                        height: 54,
-                        child: OutlinedButton.icon(
-                          onPressed: _isLoading ? null : _googleLogin,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Theme.of(context).textTheme.bodyLarge?.color,
-                            side: const BorderSide(color: Colors.grey, width: 1),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+
+                      // NÚT ĐĂNG NHẬP GOOGLE
+// Phần này chỉ xử lý giao diện nút Google.
+// Logic đăng nhập vẫn dùng hàm _googleLogin() hiện tại của bạn,
+// nên không ảnh hưởng backend hay API.
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: _isLoading ? null : _googleLogin,
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            width: double.infinity,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).brightness == Brightness.dark
+                                  ? const Color(0xFF0F172A)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: Theme.of(context).brightness == Brightness.dark
+                                    ? const Color(0xFF334155)
+                                    : const Color(0xFFE2E8F0),
+                                width: 1.2,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withAlpha(
+                                    Theme.of(context).brightness == Brightness.dark ? 35 : 10,
+                                  ),
+                                  blurRadius: 14,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ],
                             ),
-                          ),
-                          icon: Image.network(
-                            'https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg',
-                            height: 24,
-                            width: 24,
-                            errorBuilder: (context, error, stackTrace) => const Icon(Icons.g_mobiledata, size: 36),
-                          ),
-                          label: const Text(
-                            'Đăng nhập bằng Google',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                // Logo Google tự vẽ bằng CustomPainter.
+                                // Không dùng Image.network nữa nên sẽ không bị lỗi SVG
+                                // và không còn hiện icon chữ G trống.
+                                const _GoogleLogoMark(size: 30),
+
+                                const SizedBox(width: 12),
+
+                                Text(
+                                  'Đăng nhập bằng Google',
+                                  style: TextStyle(
+                                    color: Theme.of(context).brightness == Brightness.dark
+                                        ? Colors.white
+                                        : const Color(0xFF1E293B),
+                                    fontSize: 15.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
                       ),
                     ],
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1E3A8A).withAlpha(50) : const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Text(
-                    '',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
-                      fontSize: 13,
-                      height: 1.45,
-                      fontWeight: FontWeight.w700,
-                    ),
                   ),
                 ),
               ],
@@ -708,5 +706,114 @@ class _MessageBox extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+// WIDGET LOGO GOOGLE
+// Widget này dùng để thay thế icon chữ G trống mặc định.
+// Lý do không dùng Image.network:
+// - Link logo Google cũ là SVG.
+// - Flutter Image.network không render SVG trực tiếp.
+// - Khi lỗi, app hiện icon Icons.g_mobiledata nhìn rất xấu.
+//
+// Cách làm ở đây:
+// - Tạo một hình tròn trắng nhỏ.
+// - Dùng CustomPainter vẽ chữ G nhiều màu gần giống logo Google.
+// - Không cần thêm ảnh asset.
+// - Không cần thêm package mới.
+class _GoogleLogoMark extends StatelessWidget {
+  final double size;
+
+  const _GoogleLogoMark({
+    required this.size,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: const Color(0xFFE5E7EB),
+          width: 1,
+        ),
+      ),
+      child: CustomPaint(
+        painter: _GoogleGLogoPainter(),
+      ),
+    );
+  }
+}
+
+// Painter này vẽ logo Google dạng đơn giản.
+// Nó không phải ảnh chính thức 100%, nhưng đẹp hơn icon G trống
+// và đủ dùng cho giao diện đăng nhập.
+class _GoogleGLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final strokeWidth = size.width * 0.13;
+
+    final center = Offset(
+      size.width / 2,
+      size.height / 2,
+    );
+
+    final rect = Rect.fromCircle(
+      center: center,
+      radius: size.width * 0.28,
+    );
+
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.square;
+
+    double degreeToRadian(double degree) {
+      return degree * math.pi / 180;
+    }
+
+    void drawArcSegment(Color color, double startDegree, double sweepDegree) {
+      paint.color = color;
+      canvas.drawArc(
+        rect,
+        degreeToRadian(startDegree),
+        degreeToRadian(sweepDegree),
+        false,
+        paint,
+      );
+    }
+
+    // Các đoạn màu mô phỏng logo Google.
+    drawArcSegment(const Color(0xFF4285F4), -35, 85); // xanh dương
+    drawArcSegment(const Color(0xFF34A853), 45, 85); // xanh lá
+    drawArcSegment(const Color(0xFFFBBC05), 130, 80); // vàng
+    drawArcSegment(const Color(0xFFEA4335), 210, 115); // đỏ
+
+    // Nét ngang của chữ G.
+    final bluePaint = Paint()
+      ..color = const Color(0xFF4285F4)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.square;
+
+    canvas.drawLine(
+      Offset(size.width * 0.50, size.height * 0.50),
+      Offset(size.width * 0.78, size.height * 0.50),
+      bluePaint,
+    );
+
+    canvas.drawLine(
+      Offset(size.width * 0.78, size.height * 0.50),
+      Offset(size.width * 0.78, size.height * 0.62),
+      bluePaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) {
+    return false;
   }
 }
