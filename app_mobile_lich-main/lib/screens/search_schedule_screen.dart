@@ -29,40 +29,75 @@ class _SearchScheduleScreenState extends State<SearchScheduleScreen> {
   final TextEditingController _controller = TextEditingController();
 
   String _keyword = '';
-  Future<List<ScheduleItem>>? _schedulesFuture;
+  List<ScheduleItem>? _allSchedules;
+  List<ScheduleItem> _displayedSchedules = [];
+  bool _isLoading = true;
   late StreamSubscription<String> _eventSubscription;
-  Timer? _debounce;
-
-  void _onSearchChanged(String query) {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () {
-      setState(() {
-        _keyword = query;
-        _loadSchedules();
-      });
-    });
-  }
 
   @override
   void initState() {
     super.initState();
-    _loadSchedules();
+    _loadAllSchedules();
     _eventSubscription = EventBus().onScheduleDeleted.listen((_) {
       if (mounted) {
-        setState(() {
-          _loadSchedules();
-        });
+        _loadAllSchedules();
       }
     });
   }
 
-  void _loadSchedules() {
-    _schedulesFuture = widget.repository.searchSchedules(_keyword);
+  Future<void> _loadAllSchedules() async {
+    setState(() {
+      _isLoading = true;
+    });
+    
+    try {
+      // Tải sẵn toàn bộ lịch (hoặc lịch cá nhân) để filter local cho mượt mà
+      final schedules = await widget.repository.searchSchedules("");
+      if (!mounted) return;
+      setState(() {
+        _allSchedules = schedules;
+        _isLoading = false;
+        _filterSchedules();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Không thể tải dữ liệu tìm kiếm')),
+      );
+    }
+  }
+
+  void _onSearchChanged(String query) {
+    setState(() {
+      _keyword = query;
+      _filterSchedules();
+    });
+  }
+
+  void _filterSchedules() {
+    if (_allSchedules == null) return;
+
+    if (_keyword.trim().isEmpty) {
+      _displayedSchedules = List.from(_allSchedules!);
+      return;
+    }
+
+    final kw = _keyword.toLowerCase().trim();
+    _displayedSchedules = _allSchedules!.where((item) {
+      return item.title.toLowerCase().contains(kw) ||
+             item.teacher.toLowerCase().contains(kw) ||
+             item.room.toLowerCase().contains(kw) ||
+             item.unit.toLowerCase().contains(kw) ||
+             item.departmentName.toLowerCase().contains(kw) ||
+             item.participants.any((p) => p.toLowerCase().contains(kw));
+    }).toList();
   }
 
   @override
   void dispose() {
-    _debounce?.cancel();
     _eventSubscription.cancel();
     _controller.dispose();
     super.dispose();
@@ -76,9 +111,7 @@ class _SearchScheduleScreenState extends State<SearchScheduleScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Xóa lịch thành công')),
       );
-      setState(() {
-        _loadSchedules();
-      });
+      _loadAllSchedules(); // Reload data
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Xóa lịch thất bại, vui lòng thử lại')),
@@ -88,80 +121,72 @@ class _SearchScheduleScreenState extends State<SearchScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<ScheduleItem>>(
-      future: _schedulesFuture,
-      builder: (context, snapshot) {
-        final isLoading = snapshot.connectionState == ConnectionState.waiting;
-        final results = snapshot.data ?? [];
-        
-        final canManage = RoleHelper.canManageSchedule(widget.repository.currentUser.role);
+    final canManage = RoleHelper.canManageSchedule(widget.repository.currentUser.role);
 
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-          children: [
-            AppHeader(
-              title: 'TÌM KIẾM',
-              subtitle: 'Tra cứu lịch theo tên, phòng, đơn vị hoặc người phụ trách',
-              icon: Icons.search,
-              accentColor: Theme.of(context).colorScheme.primary,
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      children: [
+        AppHeader(
+          title: 'TÌM KIẾM',
+          subtitle: 'Tra cứu lịch theo tên, phòng, đơn vị hoặc người phụ trách',
+          icon: Icons.search,
+          accentColor: Theme.of(context).colorScheme.primary,
+        ),
+
+        const SizedBox(height: 16),
+
+        TextField(
+          controller: _controller,
+          onChanged: _onSearchChanged,
+          decoration: InputDecoration(
+            hintText: 'Nhập từ khóa tìm kiếm...',
+            prefixIcon: const Icon(Icons.search),
+            filled: true,
+            fillColor: Theme.of(context).brightness == Brightness.dark
+                ? Colors.white.withAlpha(12)
+                : AppColors.backgroundLight,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
             ),
-
-            const SizedBox(height: 16),
-
-            TextField(
-              controller: _controller,
-              onChanged: _onSearchChanged,
-              decoration: InputDecoration(
-                hintText: 'Nhập từ khóa tìm kiếm...',
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: Theme.of(context).brightness == Brightness.dark
-                    ? Colors.white.withAlpha(12)
-                    : AppColors.backgroundLight,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
             ),
+          ),
+        ),
 
-            const SizedBox(height: 18),
+        const SizedBox(height: 18),
 
-            if (isLoading)
-              const Center(child: CircularProgressIndicator())
-            else if (results.isEmpty)
-              const EmptyState(
-                icon: Icons.manage_search,
-                title: 'Không tìm thấy lịch',
-                message: 'Thử nhập từ khóa khác để tìm kiếm.',
-              )
-            else
-              ...results.map(
-                    (item) => ScheduleCard(
-                  item: item,
-                  accentColor: _getColorByItem(item, context),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ScheduleDetailScreen(
-                          item: item,
-                          accentColor: _getColorByItem(item, context),
-                          isAdmin: canManage,
-                          onDelete: () => _deleteSchedule(item),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-          ],
-        );
-      },
+        if (_isLoading)
+          const Center(child: CircularProgressIndicator())
+        else if (_displayedSchedules.isEmpty)
+          const EmptyState(
+            icon: Icons.manage_search,
+            title: 'Không tìm thấy lịch',
+            message: 'Thử nhập từ khóa khác để tìm kiếm.',
+          )
+        else
+          ..._displayedSchedules.map(
+                (item) => ScheduleCard(
+              item: item,
+              accentColor: _getColorByItem(item, context),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ScheduleDetailScreen(
+                      item: item,
+                      accentColor: _getColorByItem(item, context),
+                      isAdmin: canManage,
+                      onDelete: () => _deleteSchedule(item),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
     );
   }
 
