@@ -105,7 +105,7 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
 
   Future<void> _importPdf() async {
     try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
+      FilePickerResult? result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'docx', 'xlsx'],
         withData: true,
