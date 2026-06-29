@@ -424,17 +424,15 @@ from fastapi import UploadFile, File
 @router.post("/import")
 async def import_schedules(file: UploadFile = File(...)):
     """
-    Nhận file (PDF, Word, Excel), trích xuất text bảng biểu và sử dụng Gemini AI để phân tích.
-    Tự động chia tách và xử lý song song để trả về dữ liệu xem trước (JSON preview).
-    Lưu ý: API này chỉ trả về Preview, người dùng cần bấm xác nhận lưu thì mới gọi API ghi DB.
+    Nhận file (PDF, Word, Excel), trích xuất text và dùng Gemini AI phân tích → trả về JSON preview.
     
-    Thiết kế kết nối:
-      - Kết nối DB được lấy + trả về TRƯỚC khi gọi AI (~19 giây).
-      - Sau khi AI xong, lấy kết nối MỚI HOÀN TOÀN (pyodbc.pooling=False đảm bảo TCP thực sự mới).
-      - Điều này tránh lỗi 08S01 (TCP Provider error) do SQL Server ngắt kết nối idle sau ~15-20 giây.
+    Chống lỗi 08S01 (TCP Provider reset):
+      - fetch_with_retry() tạo TCP connection MỚI hoàn toàn (pyodbc.pooling=False), retry tối đa 3 lần.
+      - Kết nối được trả về NGAY sau khi fetch data, không giữ idle trong 19 giây chờ AI.
     """
-    from database import get_connection, return_connection
-    
+    from database import fetch_with_retry
+    from services.gemini_service import extract_schedules_from_file_async, match_participant_to_user
+
     allowed_exts = ['.pdf', '.docx', '.xlsx']
     file_ext = os.path.splitext(file.filename)[1].lower()
     if file_ext not in allowed_exts:
@@ -445,24 +443,24 @@ async def import_schedules(file: UploadFile = File(...)):
 
     temp_file_path = f"temp_{uuid.uuid4()}{file_ext}"
     try:
-        # Lưu file tạm thời vào server để xử lý
+        # Lưu file tạm vào server
         with open(temp_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # ── BƯỚC 1: Lấy kết nối → Fetch data → Trả kết nối NGAY (trước khi gọi AI) ──
-        db_pre = get_connection()
-        try:
-            cursor = db_pre.cursor()
-            cursor.execute("SELECT id, name FROM dbo.departments")
-            departments = [{"id": str(row[0]), "name": row[1]} for row in cursor.fetchall()]
-            cursor.execute("SELECT id, username, full_name, department_id FROM dbo.users WHERE is_active = 1")
-            users = [{"id": str(row[0]), "username": row[1], "full_name": row[2],
-                      "department_id": str(row[3]) if row[3] else None} for row in cursor.fetchall()]
-        finally:
-            return_connection(db_pre)  # Trả về pool TRƯỚC khi AI chạy — không giữ TCP idle
+        # ── BƯỚC 1: Fetch DB data, trả kết nối ngay, retry tự động nếu TCP reset ──
+        (departments, users) = fetch_with_retry([
+            (
+                "SELECT id, name FROM dbo.departments",
+                lambda r: {"id": str(r[0]), "name": r[1]}
+            ),
+            (
+                "SELECT id, username, full_name, department_id FROM dbo.users WHERE is_active = 1",
+                lambda r: {"id": str(r[0]), "username": r[1], "full_name": r[2],
+                           "department_id": str(r[3]) if r[3] else None}
+            ),
+        ])
 
-        # ── BƯỚC 2: Gọi AI (mất ~15-20 giây, KHÔNG có DB connection nào bị giữ) ──
-        from services.gemini_service import extract_schedules_from_file_async, match_participant_to_user
+        # ── BƯỚC 2: Gọi AI (~15-20 giây) — KHÔNG có DB connection nào bị giữ ──
         schedules_json = await extract_schedules_from_file_async(
             temp_file_path, file_ext, departments
         )
@@ -473,11 +471,10 @@ async def import_schedules(file: UploadFile = File(...)):
                 detail="Không thể trích xuất lịch công tác từ file hoặc file trống."
             )
 
-        # ── BƯỚC 3: Ánh xạ người tham gia từ dữ liệu đã fetch sẵn (không cần kết nối DB thêm) ──
+        # ── BƯỚC 3: Ánh xạ người tham gia từ data đã fetch (không cần DB thêm) ──
         for item in schedules_json:
             matched_set = set()
-            raw_list = item.get("participants_raw", [])
-            for raw_name in raw_list:
+            for raw_name in item.get("participants_raw", []):
                 uid = match_participant_to_user(raw_name, users, departments)
                 if uid:
                     matched_set.add(uid)
@@ -498,15 +495,11 @@ async def import_schedules(file: UploadFile = File(...)):
         traceback.print_exc()
         print(f"Import Error: {error_msg}")
         if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-            raise HTTPException(
-                status_code=429,
-                detail="Tài khoản AI Gemini của bạn đã hết hạn mức sử dụng trong ngày. Vui lòng tạo API Key mới."
-            )
+            raise HTTPException(status_code=429,
+                detail="Tài khoản AI Gemini đã hết hạn mức sử dụng trong ngày. Vui lòng tạo API Key mới.")
         elif "503" in error_msg or "UNAVAILABLE" in error_msg:
-            raise HTTPException(
-                status_code=503,
-                detail="Dịch vụ AI Gemini hiện đang bị quá tải tạm thời. Vui lòng thử lại sau ít phút."
-            )
+            raise HTTPException(status_code=503,
+                detail="Dịch vụ AI Gemini đang bị quá tải. Vui lòng thử lại sau ít phút.")
         raise HTTPException(status_code=500, detail=f"Lỗi xử lý trích xuất AI: {error_msg}")
     finally:
         if os.path.exists(temp_file_path):

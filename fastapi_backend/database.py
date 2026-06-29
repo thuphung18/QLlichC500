@@ -212,3 +212,72 @@ def pre_warm_pool(size: int = POOL_MIN):
             break
     print(f"[Pool] Đã khởi tạo trước {warmed} kết nối (Tổng số kết nối đang quản lý={_total})")
 
+
+def fetch_with_retry(queries: list[tuple], max_attempts: int = 3) -> list:
+    """
+    Thực thi nhiều câu lệnh SELECT liên tiếp trên cùng một kết nối với cơ chế retry tự động.
+    
+    Giải quyết race condition TOCTOU (Time-of-Check-Time-of-Use) với lỗi 08S01:
+    - Nếu kết nối vừa qua _is_alive() nhưng SQL Server gửi RST ngay sau,
+      hàm sẽ tự động đóng kết nối cũ, tạo kết nối MỚI HOÀN TOÀN và thử lại.
+    - Mỗi lần retry tạo TCP connection hoàn toàn mới (pyodbc.pooling=False).
+    
+    Args:
+        queries: Danh sách tuple (sql, row_mapper_fn) - hàm mapper nhận row pyodbc và trả về dict
+        max_attempts: Số lần thử tối đa (mặc định 3)
+    
+    Returns:
+        Danh sách kết quả tương ứng với từng query
+    
+    Example:
+        results = fetch_with_retry([
+            ("SELECT id, name FROM dbo.departments", lambda r: {"id": str(r[0]), "name": r[1]}),
+            ("SELECT id, username FROM dbo.users", lambda r: {"id": str(r[0]), "username": r[1]}),
+        ])
+        departments, users = results
+    """
+    global _total
+
+    for attempt in range(max_attempts):
+        # Mỗi lần retry tạo kết nối vật lý MỚI (không lấy từ pool để tránh nhận socket đã chết)
+        with _lock:
+            _total += 1
+        try:
+            conn = _new_conn()
+        except Exception:
+            with _lock:
+                _total -= 1
+            raise
+
+        try:
+            cursor = conn.cursor()
+            results = []
+            for (sql, mapper) in queries:
+                cursor.execute(sql)
+                results.append([mapper(row) for row in cursor.fetchall()])
+            return results
+        except pyodbc.OperationalError as e:
+            err_str = str(e)
+            # 08S01: TCP Provider - connection reset by peer
+            # 08003: Connection not open
+            if any(code in err_str for code in ("08S01", "08003", "08S02")):
+                print(f"[DB] fetch_with_retry: Connection reset (attempt {attempt+1}/{max_attempts}): {e}")
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                with _lock:
+                    _total -= 1
+                if attempt < max_attempts - 1:
+                    continue   # Thử lại với kết nối mới
+                raise          # Hết lần thử, ném lỗi cho caller
+            raise              # Lỗi SQL khác (syntax, permission...) → không retry
+        finally:
+            # Luôn trả kết nối về pool sau khi dùng xong
+            try:
+                return_connection(conn)
+            except Exception:
+                pass
+    raise RuntimeError("fetch_with_retry: Hết số lần thử kết nối")
+
+
