@@ -422,13 +422,19 @@ import shutil
 from fastapi import UploadFile, File
 
 @router.post("/import")
-async def import_schedules(file: UploadFile = File(...),
-                           db: pyodbc.Connection = Depends(get_db)):
+async def import_schedules(file: UploadFile = File(...)):
     """
     Nhận file (PDF, Word, Excel), trích xuất text bảng biểu và sử dụng Gemini AI để phân tích.
     Tự động chia tách và xử lý song song để trả về dữ liệu xem trước (JSON preview).
     Lưu ý: API này chỉ trả về Preview, người dùng cần bấm xác nhận lưu thì mới gọi API ghi DB.
+    
+    Thiết kế kết nối:
+      - Kết nối DB được lấy + trả về TRƯỚC khi gọi AI (~19 giây).
+      - Sau khi AI xong, lấy kết nối MỚI HOÀN TOÀN (pyodbc.pooling=False đảm bảo TCP thực sự mới).
+      - Điều này tránh lỗi 08S01 (TCP Provider error) do SQL Server ngắt kết nối idle sau ~15-20 giây.
     """
+    from database import get_connection, return_connection
+    
     allowed_exts = ['.pdf', '.docx', '.xlsx']
     file_ext = os.path.splitext(file.filename)[1].lower()
     if file_ext not in allowed_exts:
@@ -437,31 +443,29 @@ async def import_schedules(file: UploadFile = File(...),
             detail=f"Hệ thống chỉ hỗ trợ các định dạng: {', '.join(allowed_exts)}"
         )
 
+    temp_file_path = f"temp_{uuid.uuid4()}{file_ext}"
     try:
         # Lưu file tạm thời vào server để xử lý
-        temp_file_path = f"temp_{uuid.uuid4()}{file_ext}"
         with open(temp_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # Lấy danh sách phòng ban trong DB để truyền cho Gemini đối chiếu ID
-        cursor = db.cursor()
-        cursor.execute("SELECT id, name FROM dbo.departments")
-        departments = [{"id": str(row[0]), "name": row[1]} for row in cursor.fetchall()]
-        
-        # Lấy danh sách người dùng hoạt động để tự động ánh xạ tài khoản
-        cursor.execute("SELECT id, username, full_name, department_id FROM dbo.users WHERE is_active = 1")
-        users = [{"id": str(row[0]), "username": row[1], "full_name": row[2], "department_id": str(row[3]) if row[3] else None} for row in cursor.fetchall()]
-        cursor.close()
+        # ── BƯỚC 1: Lấy kết nối → Fetch data → Trả kết nối NGAY (trước khi gọi AI) ──
+        db_pre = get_connection()
+        try:
+            cursor = db_pre.cursor()
+            cursor.execute("SELECT id, name FROM dbo.departments")
+            departments = [{"id": str(row[0]), "name": row[1]} for row in cursor.fetchall()]
+            cursor.execute("SELECT id, username, full_name, department_id FROM dbo.users WHERE is_active = 1")
+            users = [{"id": str(row[0]), "username": row[1], "full_name": row[2],
+                      "department_id": str(row[3]) if row[3] else None} for row in cursor.fetchall()]
+        finally:
+            return_connection(db_pre)  # Trả về pool TRƯỚC khi AI chạy — không giữ TCP idle
 
-        # Gọi dịch vụ Gemini AI trích xuất thông tin lịch công tác
+        # ── BƯỚC 2: Gọi AI (mất ~15-20 giây, KHÔNG có DB connection nào bị giữ) ──
         from services.gemini_service import extract_schedules_from_file_async, match_participant_to_user
         schedules_json = await extract_schedules_from_file_async(
             temp_file_path, file_ext, departments
         )
-
-        # Tiến hành dọn dẹp xóa tệp tạm
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
 
         if not schedules_json:
             raise HTTPException(
@@ -469,43 +473,44 @@ async def import_schedules(file: UploadFile = File(...),
                 detail="Không thể trích xuất lịch công tác từ file hoặc file trống."
             )
 
-        # Tự động ánh xạ người tham gia và người chủ trì vào tài khoản DB
+        # ── BƯỚC 3: Ánh xạ người tham gia từ dữ liệu đã fetch sẵn (không cần kết nối DB thêm) ──
         for item in schedules_json:
             matched_set = set()
-            
-            # Khớp danh sách người tham gia thô
             raw_list = item.get("participants_raw", [])
             for raw_name in raw_list:
                 uid = match_participant_to_user(raw_name, users, departments)
                 if uid:
                     matched_set.add(uid)
-            
-            # Khớp người chủ trì (teacher)
             teacher_name = item.get("teacher", "")
             if teacher_name:
                 uid = match_participant_to_user(teacher_name, users, departments)
                 if uid:
                     matched_set.add(uid)
-                    
             item["participantUserIds"] = list(matched_set)
 
         return schedules_json
+
     except HTTPException:
         raise
     except Exception as e:
         error_msg = str(e)
+        import traceback
+        traceback.print_exc()
         print(f"Import Error: {error_msg}")
         if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
             raise HTTPException(
                 status_code=429,
-                detail="Tài khoản AI Gemini của bạn đã hết hạn mức sử dụng trong ngày (Free Tier limit 20 requests/ngày). Vui lòng tạo API Key mới hoặc liên kết thẻ thanh toán để nâng hạn mức."
+                detail="Tài khoản AI Gemini của bạn đã hết hạn mức sử dụng trong ngày. Vui lòng tạo API Key mới."
             )
         elif "503" in error_msg or "UNAVAILABLE" in error_msg:
             raise HTTPException(
                 status_code=503,
-                detail="Dịch vụ AI Gemini hiện đang bị quá tải tạm thời từ phía Google. Vui lòng thử lại sau ít phút."
+                detail="Dịch vụ AI Gemini hiện đang bị quá tải tạm thời. Vui lòng thử lại sau ít phút."
             )
         raise HTTPException(status_code=500, detail=f"Lỗi xử lý trích xuất AI: {error_msg}")
+    finally:
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
 
 
 @router.post("/bulk", response_model=dict)

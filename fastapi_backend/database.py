@@ -25,8 +25,11 @@ DRIVER   = os.environ.get('DB_DRIVER',   '{ODBC Driver 17 for SQL Server}')
 UID      = os.environ.get('DB_UID',      'nghiand')
 PWD      = os.environ.get('DB_PWD',      '@NangHaNoi2020@')
 
-# Bật tính năng connection pooling ở tầng driver (ODBC-level pooling) giúp driver tái sử dụng socket bên dưới
-pyodbc.pooling = True
+# TẮT pyodbc-level pooling để tránh xung đột với pool tự dựng của chúng ta.
+# Khi pooling=True, pyodbc giữ socket TCP cũ trong pool nội bộ của nó, và khi gọi
+# pyodbc.connect() lại (dù là fresh), nó trả về đúng socket cũ đã bị SQL Server ngắt —
+# dẫn đến lỗi 08S01. Với pooling=False, mỗi pyodbc.connect() tạo TCP thực sự mới.
+pyodbc.pooling = False
 
 # ─────────────────────────────────────────────
 # Kích thước Pool (Sử dụng hàng đợi Queue để lưu trữ các kết nối nhàn rỗi)
