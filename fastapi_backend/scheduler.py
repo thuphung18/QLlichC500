@@ -12,6 +12,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import firebase_admin
 from firebase_admin import credentials, messaging
 from database import get_connection
+from cache import invalidate_schedules
 
 
 def init_firebase():
@@ -149,6 +150,55 @@ def send_import_notifications_bg(has_toantruong: bool, dept_ids: set):
         conn.close()
 
 
+def auto_hide_old_schedules():
+    """
+    Tác vụ chạy ngầm định kỳ:
+      Quét các lịch có schedule_date nhỏ hơn ngày đầu tiên (Thứ 2) của tuần hiện tại.
+      Cập nhật trạng thái thành 'delete_by_admin' (xóa mềm).
+      Xóa cache nếu có dữ liệu bị thay đổi.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        now = datetime.now()
+        # Tìm ngày Thứ 2 của tuần hiện tại
+        start_of_week = now - timedelta(days=now.weekday())
+        start_of_week_str = start_of_week.strftime("%Y-%m-%d")
+
+        # Tìm các department có lịch cũ để xóa cache
+        cursor.execute('''
+            SELECT DISTINCT department_id
+            FROM dbo.schedules
+            WHERE schedule_date < ? AND status != 'delete_by_admin'
+        ''', (start_of_week_str,))
+        dept_rows = cursor.fetchall()
+
+        if dept_rows:
+            # Cập nhật trạng thái
+            cursor.execute('''
+                UPDATE dbo.schedules
+                SET status = 'delete_by_admin'
+                WHERE schedule_date < ? AND status != 'delete_by_admin'
+            ''', (start_of_week_str,))
+            
+            deleted_count = cursor.rowcount
+            db_commit_needed = True
+            if deleted_count > 0:
+                conn.commit()
+                print(f"[Auto Archive] Đã xóa mềm {deleted_count} lịch cũ (trước {start_of_week_str}).")
+                # Xóa cache cho các phòng ban bị ảnh hưởng
+                for row in dept_rows:
+                    if row[0]:
+                        invalidate_schedules(str(row[0]))
+                # Xóa cache toàn trường (nếu có null department)
+                invalidate_schedules(None)
+    except Exception as e:
+        print(f"[Auto Archive] Lỗi khi tự động ẩn lịch cũ: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def start_scheduler():
     """
     Thiết lập và khởi chạy Bộ lập lịch chạy ngầm (Background Scheduler).
@@ -162,6 +212,9 @@ def start_scheduler():
     
     # Thiết lập chạy tác vụ quét lịch nhắc nhở vào mỗi phút (cron expression: minute='*')
     scheduler.add_job(check_schedules_and_notify, 'cron', minute='*')
+    
+    # Thiết lập chạy tác vụ ẩn lịch tuần cũ vào lúc 00:05 mỗi ngày
+    scheduler.add_job(auto_hide_old_schedules, 'cron', hour=0, minute=5)
     
     # Bắt đầu chạy bộ đếm thời gian
     scheduler.start()
