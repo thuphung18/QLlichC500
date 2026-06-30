@@ -261,7 +261,16 @@ def delete_user(user_id: str, admin_id: str, db=Depends(get_db)):
         cursor.execute("DELETE FROM dbo.personal_notifications WHERE user_id = ?", (user_id,))
         cursor.execute("DELETE FROM dbo.password_reset_codes WHERE user_id = ?", (user_id,))
         cursor.execute("DELETE FROM dbo.fcm_tokens WHERE user_id = ?", (user_id,))
+        
+        # Xóa các tham gia và lịch ẩn thuộc về các lịch do người dùng này tạo ra
+        cursor.execute("DELETE FROM dbo.user_hidden_schedules WHERE schedule_id IN (SELECT id FROM dbo.schedules WHERE created_by_user_id = ?)", (user_id,))
+        cursor.execute("DELETE FROM dbo.schedule_participants WHERE schedule_id IN (SELECT id FROM dbo.schedules WHERE created_by_user_id = ?)", (user_id,))
+        
+        # Xóa các liên kết lịch cá nhân của chính user này
+        cursor.execute("DELETE FROM dbo.user_hidden_schedules WHERE user_id = ?", (user_id,))
         cursor.execute("DELETE FROM dbo.schedule_participants WHERE user_id = ?", (user_id,))
+        
+        # Sau đó xóa lịch do người dùng tạo
         cursor.execute("DELETE FROM dbo.schedules WHERE created_by_user_id = ?", (user_id,))
         
         # Tiến hành xóa User

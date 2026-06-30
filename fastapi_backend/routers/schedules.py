@@ -376,7 +376,8 @@ def clear_all_schedules(user_id: str, db: pyodbc.Connection = Depends(get_db)):
     cursor = db.cursor()
     try:
         if _is_admin(role):
-            # Xóa cứng toàn bộ tham gia và lịch
+            # Xóa cứng toàn bộ tham gia, lịch ẩn và lịch
+            cursor.execute("DELETE FROM dbo.user_hidden_schedules")
             cursor.execute("DELETE FROM dbo.schedule_participants")
             cursor.execute("DELETE FROM dbo.schedules")
             db.commit()
@@ -387,6 +388,12 @@ def clear_all_schedules(user_id: str, db: pyodbc.Connection = Depends(get_db)):
                 raise HTTPException(status_code=400, detail="Không xác định được phòng ban của bạn")
             
             # Xóa lịch của khoa/phòng
+            cursor.execute("""
+                DELETE uhs FROM dbo.user_hidden_schedules uhs
+                INNER JOIN dbo.schedules s ON uhs.schedule_id = s.id
+                WHERE s.department_id = ?
+            """, (user_dept_id,))
+
             cursor.execute("""
                 DELETE p FROM dbo.schedule_participants p
                 INNER JOIN dbo.schedules s ON p.schedule_id = s.id
@@ -444,6 +451,7 @@ def delete_schedule(schedule_id: str, user_id: str,
                                 detail="Trưởng phòng chỉ được xóa lịch của phòng mình")
 
         # Xóa cứng khỏi CSDL
+        cursor.execute("DELETE FROM dbo.user_hidden_schedules WHERE schedule_id = ?", (schedule_id,))
         cursor.execute("DELETE FROM dbo.schedule_participants WHERE schedule_id = ?", (schedule_id,))
         cursor.execute("DELETE FROM dbo.schedules WHERE id = ?", (schedule_id,))
         db.commit()

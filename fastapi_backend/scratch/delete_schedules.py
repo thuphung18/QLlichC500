@@ -9,9 +9,9 @@ def delete_all_schedules():
         cursor.execute("DELETE FROM dbo.schedule_participants")
         cursor.execute("DELETE FROM dbo.schedules")
         db.commit()
-        print("Đã xóa toàn bộ lịch thành công!")
+        print("Success")
     except Exception as e:
         db.rollback()
-        print(f"Lỗi khi xóa: {e}")
+        print(repr(e))
 
 delete_all_schedules()
