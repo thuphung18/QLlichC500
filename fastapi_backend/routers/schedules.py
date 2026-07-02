@@ -17,6 +17,7 @@ import pyodbc
 from typing import List, Optional
 import uuid
 from datetime import datetime
+import re
 from database import get_db
 from schemas import ScheduleItem, ScheduleListResponse, CreateScheduleRequest, FormDataResponse, Department, UserCompact
 from cache import schedule_cache, department_cache, make_schedule_key, invalidate_schedules
@@ -27,6 +28,22 @@ router = APIRouter(prefix="/api/schedules", tags=["Schedules"])
 # ─────────────────────────────────────────────
 # 1. Các hàm hỗ trợ xử lý dữ liệu (Helpers)
 # ─────────────────────────────────────────────
+
+def normalize_text(text: str) -> str:
+    """
+    Chuẩn hóa tiếng Việt, loại bỏ dấu để tìm kiếm gần đúng (giống logic Flutter).
+    """
+    if not text:
+        return ""
+    text = text.lower().strip()
+    text = re.sub(r'[àáạảãâầấậẩẫăằắặẳẵ]', 'a', text)
+    text = re.sub(r'[èéẹẻẽêềếệểễ]', 'e', text)
+    text = re.sub(r'[ìíịỉĩ]', 'i', text)
+    text = re.sub(r'[òóọỏõôồốộổỗơờớợởỡ]', 'o', text)
+    text = re.sub(r'[ùúụủũưừứựửữ]', 'u', text)
+    text = re.sub(r'[ỳýỵỷỹ]', 'y', text)
+    text = re.sub(r'đ', 'd', text)
+    return text
 
 def row_to_dict(cursor, row):
     """Chuyển đổi một hàng (row) pyodbc thành dictionary."""
@@ -197,15 +214,50 @@ def get_department_schedules(user_id: str = "u001",
 
 @router.get("/search", response_model=List[ScheduleItem])
 def search_schedules(
-    keyword: str = Query(..., description="Từ khoá tìm kiếm"),
+    keyword: str = Query("", description="Từ khoá tìm kiếm"),
+    search_type: str = Query("all", description="Kiểu tìm kiếm: all, teacher, title, department, participant"),
     user_id: str = "u001",
     db: pyodbc.Connection = Depends(get_db)
 ):
     """
-    Tìm kiếm lịch theo từ khóa tiêu đề hoặc người chủ trì.
-    Không lưu cache vì từ khóa tìm kiếm rất đa dạng và thay đổi liên tục.
+    Tìm kiếm lịch công tác, hỗ trợ loại bỏ dấu tiếng Việt và lọc theo nhiều phạm vi (giống hệt logic Flutter).
+    Sử dụng get_all_schedules để tận dụng cache, sau đó filter trên RAM.
     """
-    return _fetch_schedules(user_id, db, keyword=keyword)
+    all_schedules = get_all_schedules(user_id, db)
+    
+    if not keyword:
+        return all_schedules
+
+    norm_keyword = normalize_text(keyword)
+    results = []
+    
+    for item in all_schedules:
+        title = normalize_text(item.title) if item.title else ""
+        teacher = normalize_text(item.teacher) if item.teacher else ""
+        unit = normalize_text(item.unit) if item.unit else ""
+        dept_name = normalize_text(item.department_name) if item.department_name else ""
+        participants = normalize_text(" ".join(item.participants)) if item.participants else ""
+        
+        match = False
+        if search_type == "teacher":
+            match = norm_keyword in teacher
+        elif search_type == "title":
+            match = norm_keyword in title
+        elif search_type == "department":
+            match = norm_keyword in unit or norm_keyword in dept_name
+        elif search_type == "participant":
+            match = norm_keyword in participants
+        else: # all
+            match = (norm_keyword in title or 
+                     norm_keyword in teacher or 
+                     norm_keyword in unit or 
+                     norm_keyword in dept_name or 
+                     norm_keyword in participants)
+                     
+        if match:
+            results.append(item)
+            
+    return results
 
 
 @router.get("/metadata/form-data", response_model=FormDataResponse)
@@ -332,7 +384,7 @@ def create_schedule(req: CreateScheduleRequest, user_id: str = "u001",
              start_time, end_time, session, note, unit, department_id, category, created_by_user_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (new_id, req.title, req.teacher, req.room, req.scheduleDate, date_label,
-              day_index, req.startTime, req.endTime, session, req.note, req.unit,
+              day_index, req.startTime, None, session, req.note, req.unit,
               dept_id, req.category, user_id))
 
         # 2. Thêm danh sách người tham gia
@@ -529,16 +581,27 @@ async def import_schedules(file: UploadFile = File(...)):
         # ── BƯỚC 3: Ánh xạ người tham gia từ data đã fetch (không cần DB thêm) ──
         for item in schedules_json:
             matched_set = set()
-            for raw_name in item.get("participants_raw", []):
-                uid = match_participant_to_user(raw_name, users, departments)
+
+            # 3a. Ánh xạ từng người tham dự trong participants_raw
+            # Hỗ trợ cả format mới (dict {name, dept}) và format cũ (str thô)
+            for participant in item.get("participants_raw", []):
+                uid = match_participant_to_user(participant, users, departments)
                 if uid:
                     matched_set.add(uid)
+
+            # 3b. Ánh xạ người chủ trì (teacher)
             teacher_name = item.get("teacher", "")
+            teacher_dept = item.get("teacher_dept", "")
             if teacher_name:
-                uid = match_participant_to_user(teacher_name, users, departments)
+                teacher_input = {"name": teacher_name, "dept": teacher_dept} if teacher_dept else teacher_name
+                uid = match_participant_to_user(teacher_input, users, departments)
                 if uid:
                     matched_set.add(uid)
+
             item["participantUserIds"] = list(matched_set)
+            # Xóa trường nội bộ không cần trả về client
+            item.pop("participants_raw", None)
+            item.pop("teacher_dept", None)
 
         return schedules_json
 
@@ -608,25 +671,9 @@ def bulk_create_schedules(request: List[CreateScheduleRequest],
                 return f"{default_h}:{default_m}"
             
             sched.startTime = norm_time(sched.startTime, "08", "00")
-            sched.endTime = norm_time(sched.endTime, "11", "30")
-
-            # Nếu AI lấy lịch chiều nhưng để endTime mặc định buổi sáng thì sửa thành 17:00
-            h = int(sched.startTime.split(":")[0])
-            if h >= 12 and sched.endTime < "12:00":
-                sched.endTime = "17:00"
-
-            # Bắt buộc start_time phải nhỏ hơn end_time
-            if sched.startTime > sched.endTime:
-                sched.startTime, sched.endTime = sched.endTime, sched.startTime
             
-            if sched.startTime == sched.endTime:
-                end_h = int(sched.endTime.split(":")[0])
-                if end_h < 23:
-                    sched.endTime = f"{end_h + 1:02d}:{sched.endTime.split(':')[1]}"
-                else:
-                    sched.startTime = f"22:{sched.startTime.split(':')[1]}"
-                
             # Cập nhật lại session
+            h = int(sched.startTime.split(":")[0])
             session = "morning" if h < 12 else ("afternoon" if h < 18 else "evening")
 
             days_str = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"]
@@ -653,7 +700,7 @@ def bulk_create_schedules(request: List[CreateScheduleRequest],
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 new_id, sched.title, sched.teacher, sched.room, sched.scheduleDate,
-                date_label, day_index, sched.startTime, sched.endTime, session,
+                date_label, day_index, sched.startTime, None, session,
                 sched.note, sched.unit, dept_id, cat, user_id
             ))
 

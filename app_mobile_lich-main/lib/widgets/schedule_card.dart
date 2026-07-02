@@ -69,27 +69,8 @@ class ScheduleCard extends StatelessWidget {
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: accentColor,
-                          fontSize: 13,
+                          fontSize: 14,
                           fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Container(
-                        width: 20,
-                        height: 2,
-                        decoration: BoxDecoration(
-                          color: accentColor.withAlpha(120),
-                          borderRadius: BorderRadius.circular(99),
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        item.endTime,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Theme.of(context).textTheme.bodyMedium?.color ?? const Color(0xFF64748B),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ],

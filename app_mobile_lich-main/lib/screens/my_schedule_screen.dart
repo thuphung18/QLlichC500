@@ -33,13 +33,23 @@ class MyScheduleScreen extends StatefulWidget {
 class _MyScheduleScreenState extends State<MyScheduleScreen> {
   Future<List<ScheduleItem>>? _schedulesFuture;
   late StreamSubscription<String> _eventSubscription;
+  StreamSubscription<String>? _changedSubscription;
 
   @override
   void initState() {
     super.initState();
     _loadSchedules();
     AppState().selectedDayNotifier.addListener(_onDayChanged);
+    // Lắng nghe sự kiện xóa lịch
     _eventSubscription = EventBus().onScheduleDeleted.listen((_) {
+      if (mounted) {
+        setState(() {
+          _loadSchedules();
+        });
+      }
+    });
+    // Lắng nghe mọi thay đổi lịch (import, tạo mới, sửa)
+    _changedSubscription = EventBus().onSchedulesChanged.listen((_) {
       if (mounted) {
         setState(() {
           _loadSchedules();
@@ -68,6 +78,7 @@ class _MyScheduleScreenState extends State<MyScheduleScreen> {
   void dispose() {
     AppState().selectedDayNotifier.removeListener(_onDayChanged);
     _eventSubscription.cancel();
+    _changedSubscription?.cancel();
     super.dispose();
   }
 

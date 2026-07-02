@@ -38,6 +38,7 @@ class DepartmentScheduleScreen extends StatefulWidget {
 class _DepartmentScheduleScreenState extends State<DepartmentScheduleScreen> {
   Future<List<ScheduleItem>>? _schedulesFuture;
   late StreamSubscription<String> _eventSubscription;
+  StreamSubscription<String>? _changedSubscription;
 
   @override
   void initState() {
@@ -45,6 +46,13 @@ class _DepartmentScheduleScreenState extends State<DepartmentScheduleScreen> {
     _loadSchedules();
     AppState().selectedDayNotifier.addListener(_onDayChanged);
     _eventSubscription = EventBus().onScheduleDeleted.listen((_) {
+      if (mounted) {
+        setState(() {
+          _loadSchedules();
+        });
+      }
+    });
+    _changedSubscription = EventBus().onSchedulesChanged.listen((_) {
       if (mounted) {
         setState(() {
           _loadSchedules();
@@ -71,6 +79,7 @@ class _DepartmentScheduleScreenState extends State<DepartmentScheduleScreen> {
   void dispose() {
     AppState().selectedDayNotifier.removeListener(_onDayChanged);
     _eventSubscription.cancel();
+    _changedSubscription?.cancel();
     super.dispose();
   }
 

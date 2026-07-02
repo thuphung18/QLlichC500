@@ -3,6 +3,7 @@ import '../models/create_schedule_request.dart';
 import '../models/department.dart';
 import '../models/user_compact.dart';
 import '../repositories/schedule_repository.dart';
+import '../utils/event_bus.dart';
 
 class CreateScheduleScreen extends StatefulWidget {
   final ScheduleRepository repository;
@@ -32,7 +33,6 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
 
   DateTime? _selectedDate;
   TimeOfDay? _startTime;
-  TimeOfDay? _endTime;
 
   String? _selectedDepartmentId;
   final Set<String> _selectedUserIds = {};
@@ -78,18 +78,14 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
     }
   }
 
-  Future<void> _selectTime(bool isStart) async {
+  Future<void> _selectTime() async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.now(),
     );
     if (picked != null) {
       setState(() {
-        if (isStart) {
-          _startTime = picked;
-        } else {
-          _endTime = picked;
-        }
+        _startTime = picked;
       });
     }
   }
@@ -112,7 +108,7 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
   Future<void> _saveSchedule() async {
     if (!_formKey.currentState!.validate()) return;
     
-    if (_selectedDate == null || _startTime == null || _endTime == null) {
+    if (_selectedDate == null || _startTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Vui lòng chọn ngày và giờ')),
       );
@@ -136,7 +132,6 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
       room: _roomController.text,
       scheduleDate: _formatDate(_selectedDate),
       startTime: _formatTimeOfDay(_startTime),
-      endTime: _formatTimeOfDay(_endTime),
       note: _noteController.text.isNotEmpty ? _noteController.text : null,
       unit: _unitController.text,
       departmentId: _selectedDepartmentId!,
@@ -155,6 +150,7 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Thêm lịch thành công')),
         );
+        EventBus().fireSchedulesChanged('created');
         Navigator.pop(context, true); // Return true to signal refresh
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -226,20 +222,10 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: InkWell(
-                                  onTap: () => _selectTime(true),
+                                  onTap: _selectTime,
                                   child: InputDecorator(
                                     decoration: const InputDecoration(labelText: 'Giờ bắt đầu', border: OutlineInputBorder()),
                                     child: Text(_startTime == null ? 'Chọn giờ' : _formatTimeOfDay(_startTime)),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: InkWell(
-                                  onTap: () => _selectTime(false),
-                                  child: InputDecorator(
-                                    decoration: const InputDecoration(labelText: 'Giờ kết thúc', border: OutlineInputBorder()),
-                                    child: Text(_endTime == null ? 'Chọn giờ' : _formatTimeOfDay(_endTime)),
                                   ),
                                 ),
                               ),

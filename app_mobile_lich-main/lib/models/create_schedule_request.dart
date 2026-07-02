@@ -16,9 +16,7 @@ class CreateScheduleRequest {
   /// Thời gian bắt đầu theo định dạng HH:MM
   final String startTime;    
   
-  /// Thời gian kết thúc theo định dạng HH:MM
-  final String endTime;      
-  
+
   /// Ghi chú thêm cho lịch biểu (có thể null)
   final String? note;
   
@@ -41,7 +39,6 @@ class CreateScheduleRequest {
     required this.room,
     required this.scheduleDate,
     required this.startTime,
-    required this.endTime,
     this.note,
     required this.unit,
     required this.departmentId,
@@ -58,7 +55,6 @@ class CreateScheduleRequest {
       'room': room,
       'scheduleDate': scheduleDate,
       'startTime': startTime,
-      'endTime': endTime,
       'note': note,
       'unit': unit,
       'departmentId': departmentId,
@@ -74,7 +70,6 @@ class CreateScheduleRequest {
       room: json['room'] ?? '',
       scheduleDate: json['scheduleDate'] ?? '',
       startTime: json['startTime'] ?? '',
-      endTime: json['endTime'] ?? '',
       note: json['note'],
       unit: json['unit'] ?? '',
       departmentId: json['departmentId'] ?? '',

@@ -22,14 +22,6 @@ class CalendarExportHelper {
     }
     
     DateTime end = start.add(const Duration(hours: 1));
-    try {
-      final timeParts = item.endTime.split(':');
-      if (timeParts.length >= 2) {
-        final hour = int.tryParse(timeParts[0]) ?? start.hour + 1;
-        final minute = int.tryParse(timeParts[1]) ?? start.minute;
-        end = DateTime(start.year, start.month, start.day, hour, minute);
-      }
-    } catch (_) {}
 
     final startStr = _formatDateTimeForGoogle(start);
     final endStr = _formatDateTimeForGoogle(end);
@@ -73,14 +65,6 @@ class CalendarExportHelper {
       if (start == null) continue;
       
       DateTime end = start.add(const Duration(hours: 1));
-      try {
-        final timeParts = item.endTime.split(':');
-        if (timeParts.length >= 2) {
-          final hour = int.tryParse(timeParts[0]) ?? start.hour + 1;
-          final minute = int.tryParse(timeParts[1]) ?? start.minute;
-          end = DateTime(start.year, start.month, start.day, hour, minute);
-        }
-      } catch (_) {}
 
       final startStr = _formatDateTimeForGoogle(start);
       final endStr = _formatDateTimeForGoogle(end);

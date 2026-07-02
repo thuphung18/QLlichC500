@@ -359,6 +359,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   // ---------- Tab 1: Users ----------
 
   Widget _buildUsersTab() {
+    if (_isLoadingUsers || _isLoadingDepts) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    // Nhóm user theo tên phòng ban
+    Map<String, List<UserDetail>> groupedUsers = {};
+    for (var user in _users) {
+      final deptName = _departments.firstWhere(
+        (d) => d['id'] == user.departmentId,
+        orElse: () => {'name': user.unit.isNotEmpty ? user.unit : 'Chưa phân bổ'},
+      )['name'] ?? (user.unit.isNotEmpty ? user.unit : 'Chưa phân bổ');
+
+      if (!groupedUsers.containsKey(deptName)) {
+        groupedUsers[deptName] = [];
+      }
+      groupedUsers[deptName]!.add(user);
+    }
+
+    final sortedDepts = groupedUsers.keys.toList()..sort();
+
     return Column(
       children: [
         // Header actions
@@ -384,20 +404,65 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
             ],
           ),
         ),
-        // User list
+        // User list grouped by department
         Expanded(
-          child: _isLoadingUsers
-              ? const Center(child: CircularProgressIndicator())
-              : _users.isEmpty
-                  ? const Center(child: Text('Chưa có tài khoản nào', style: TextStyle(color: Color(0xFF64748B))))
-                  : RefreshIndicator(
-                      onRefresh: _loadUsers,
-                      child: ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                        itemCount: _users.length,
-                        itemBuilder: (ctx, i) => _buildUserCard(_users[i]),
-                      ),
-                    ),
+          child: _users.isEmpty
+              ? const Center(child: Text('Chưa có tài khoản nào', style: TextStyle(color: Color(0xFF64748B))))
+              : RefreshIndicator(
+                  onRefresh: () async {
+                    await _loadDepartments();
+                    await _loadUsers();
+                  },
+                  child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                    itemCount: sortedDepts.length,
+                    itemBuilder: (ctx, i) {
+                      final deptName = sortedDepts[i];
+                      final deptUsers = groupedUsers[deptName]!;
+                      
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(top: 16, bottom: 12, left: 4),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.business, size: 18, color: Color(0xFF64748B)),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    deptName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 15,
+                                      color: Color(0xFF334155),
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context).colorScheme.primary.withAlpha(20),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '${deptUsers.length}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                      color: Theme.of(context).colorScheme.primary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          ...deptUsers.map((u) => _buildUserCard(u)),
+                        ],
+                      );
+                    },
+                  ),
+                ),
         ),
       ],
     );

@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 class ApiConfig {
   /// Đặt true nếu muốn kết nối với API đã deploy trên Render.
   /// Đặt false nếu muốn chạy test dưới local (localhost hoặc IP mạng LAN).
-  static const bool useProduction = true;
+  static const bool useProduction = false;
 
   /// Đường dẫn API đã deploy trên Render.
   /// Hãy thay đổi URL này bằng URL thực tế trên Render dashboard của bạn.
@@ -20,7 +20,8 @@ class ApiConfig {
       final host = Uri.base.host.isEmpty ? 'localhost' : Uri.base.host;
       return 'http://$host:8000/api';
     }
-    // Địa chỉ IPv4 của máy chủ (backend) trên mạng Wi-Fi (ví dụ: hvan.edu.vn)
-    return 'http://192.168.1.132:8000/api';
+    // Địa chỉ IPv4 của máy chủ (backend) trên mạng Wi-Fi
+    // Nếu dùng máy ảo Android (Emulator) thì đổi thành 'http://10.0.2.2:8000/api'
+    return 'http://192.168.1.110:8000/api';
   }
 }

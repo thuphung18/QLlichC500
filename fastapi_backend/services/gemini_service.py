@@ -119,7 +119,6 @@ Quy tắc trích xuất cho mỗi lịch (trả về đúng định dạng JSON 
     "room": "Địa điểm (nếu có, không có để chuỗi rỗng)",
     "scheduleDate": "Ngày diễn ra (định dạng YYYY-MM-DD). NẾU KHÔNG CÓ NĂM RÕ RÀNG, HÃY MẶC ĐỊNH SỬ DỤNG NĂM {current_year}.",
     "startTime": "Giờ bắt đầu (định dạng HH:MM, nếu không có để 08:00)",
-    "endTime": "Giờ kết thúc (định dạng HH:MM, nếu không có: nếu ca sáng để 11:30, ca chiều để 17:00)",
     "note": "Thành phần dự hoặc ghi chú (chuỗi)",
     "unit": "Học viện ANND",
     "departmentId": "Mã UUID của phòng ban liên quan nhất (Dựa vào chữ viết tắt trong Nội dung hoặc Thành phần dự. Ví dụ: QLĐT, HC, NV1... Đối chiếu với DANH SÁCH PHÒNG BAN ở trên để lấy ra id chính xác. Nếu không xác định được, hãy lấy id của phòng Quản lý đào tạo (QLĐT) hoặc Hành chính (HC) hoặc để chuỗi rỗng).",
@@ -314,20 +313,34 @@ async def extract_single_chunk(group_name: str, chunk_text: str, departments: li
     from datetime import datetime
     current_year = datetime.now().year
     prompt = f"""
-Bạn là một trợ lý AI phân tích lịch công tác. Nhiệm vụ của bạn là đọc nội dung lịch dưới đây (dạng Markdown) và trích xuất thành danh sách các object JSON rút gọn. Năm hiện tại là {current_year}.
+Bạn là một trợ lý AI phân tích lịch công tác chuyên nghiệp. Hãy đọc nội dung lịch dưới đây và trích xuất thành JSON array. Năm hiện tại là {current_year}.
 
-Quy tắc trích xuất (CHỈ trả về JSON array trực tiếp `[...]`):
+QUY TẮC TRÍCH XUẤT QUAN TRỌNG:
+1. Mỗi mục lịch là một object JSON trong array.
+2. Trường "participants": Trích xuất TỪNG NGƯỜI một trong cột "Thành phần dự" hoặc "Thành phần tham gia" hoặc ghi chú.
+   - Với mỗi người, tách TÊN và PHÒNG BAN riêng.
+   - Ví dụ: "Đ/c Nghĩa (NV7)" → {{"name": "Nghĩa", "dept": "NV7"}}
+   - Ví dụ: "đ/c Hùng - Hành chính" → {{"name": "Hùng", "dept": "HC"}}
+   - Ví dụ: "Trung tá Vũ (PGĐ)" → {{"name": "Vũ", "dept": ""}}
+   - Bỏ tất cả chức danh: Đ/c, đồng chí, Trung tá, Thiếu tá, GS, TS, PGS...
+   - Chỉ giữ lại TÊN (thường là từ cuối trong họ tên đầy đủ) và MÃ PHÒNG BAN nếu có.
+3. Trường "teacher": Chỉ lấy TÊN (không có chức danh). Ví dụ: "Đ/c Vũ (PGĐ)" → "Vũ".
+4. Trường "department": Mã viết tắt phòng ban chủ quản của lịch (NV7, HC, QLĐT...)
+
+CHỈ trả về JSON array thô `[...]` không có markdown:
 [
   {{
-    "title": "Nội dung công việc (chuỗi)",
-    "teacher": "Người chủ trì (tên người, ví dụ: Đ/c Vũ (PGĐ))",
-    "room": "Địa điểm (nếu có, không có để chuỗi rỗng)",
-    "scheduleDate": "Ngày diễn ra (định dạng YYYY-MM-DD). Hãy suy luận ngày dựa vào mốc thời gian trong văn bản của từng công việc. NẾU KHÔNG CÓ NĂM RÕ RÀNG, HÃY MẶC ĐỊNH SỬ DỤNG NĂM {current_year}.",
-    "startTime": "Giờ bắt đầu (định dạng HH:MM, mặc định 08:00)",
-    "endTime": "Giờ kết thúc (định dạng HH:MM, mặc định 11:30 cho ca sáng và 17:00 cho ca chiều)",
-    "note": "Thành phần dự hoặc ghi chú (chuỗi)",
-    "department": "Tên viết tắt hoặc từ khóa của phòng ban liên quan nhất (ví dụ: QLĐT, HC, NV1... để trống nếu không rõ)",
-    "participants_raw": ["Danh sách tên viết tắt hoặc đầy đủ của những người tham gia, trích xuất từ cột Thành phần dự hoặc Ghi chú hoặc Tiêu đề, ví dụ: ['Nghĩa(nv7)', 'Hùng(hc)']. Nếu không có để mảng rỗng []"]
+    "title": "Nội dung công việc",
+    "teacher": "Tên người chủ trì (chỉ tên, không chức danh)",
+    "teacher_dept": "Mã phòng ban của người chủ trì nếu có (ví dụ NV7, HC...)",
+    "room": "Địa điểm (để rỗng nếu không có)",
+    "scheduleDate": "YYYY-MM-DD - suy luận từ tiêu đề tuần/mốc thời gian, dùng năm {current_year} nếu không rõ",
+    "startTime": "HH:MM - mặc định 08:00 nếu không rõ",
+    "note": "Toàn bộ nội dung cột Thành phần dự / Ghi chú giữ nguyên",
+    "department": "Mã viết tắt phòng ban chủ quản của lịch (NV7, HC, QLĐT... để rỗng nếu là lịch toàn trường)",
+    "participants": [
+      {{"name": "Tên người (chỉ tên)", "dept": "Mã phòng ban nếu có, để rỗng nếu không có"}}
+    ]
   }}
 ]
 
@@ -344,7 +357,6 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
                 'gemini-1.5-flash-8b', 
                 'gemini-1.5-flash', 
                 'gemini-1.5-pro',
-                'gemini-1.0-pro'
             ]
             last_error = None
             for current_model in FALLBACK_MODELS:
@@ -355,15 +367,13 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
                             "Authorization": f"Bearer {_API_KEY}",
                             "Content-Type": "application/json"
                         }
+                        # KHÔNG dùng json_object vì response là array, dùng text thường
                         payload = {
                             "model": current_model,
                             "messages": [{"role": "user", "content": prompt}],
                             "temperature": 0.1
                         }
-                        # Tuỳ chọn JSON format (tuỳ thuộc proxy có hỗ trợ không)
-                        payload["response_format"] = {"type": "json_object"}
-                        
-                        resp = requests.post("https://platform.beeknoee.com/api/v1/chat/completions", headers=headers, json=payload, timeout=60)
+                        resp = requests.post("https://platform.beeknoee.com/api/v1/chat/completions", headers=headers, json=payload, timeout=90)
                         if resp.status_code == 200:
                             data = resp.json()
                             return data["choices"][0]["message"]["content"]
@@ -392,38 +402,35 @@ NỘI DUNG LỊCH CÔNG TÁC CỦA {group_name}:
                 except Exception as e:
                     error_msg = str(e).lower()
                     print(f"[Gemini Service] Model {current_model} gặp lỗi khi xử lý nhóm {group_name}: {e}")
-                    # Thử model tiếp theo nếu lỗi quá tải, hết token, hoặc model không tồn tại (404)
-                    if "429" in error_msg or "resource exhausted" in error_msg or "resource_exhausted" in error_msg or "quota" in error_msg or "503" in error_msg or "unavailable" in error_msg or "404" in error_msg or "not found" in error_msg:
-                        last_error = e
-                        continue
                     last_error = e
                     continue
             raise last_error if last_error else Exception("All fallback models failed")
 
         response_text = await loop.run_in_executor(_EXECUTOR, _call_api)
-        result_text = response_text.strip() if isinstance(response_text, str) else response_text
+        result_text = response_text.strip() if isinstance(response_text, str) else str(response_text)
         
-        # Dọn dẹp thẻ code block phòng hờ trường hợp API không tuân thủ hoàn toàn JSON mode
-        if result_text.startswith("```json"):
-            result_text = result_text[7:]
-        if result_text.startswith("```"):
-            result_text = result_text[3:]
-        if result_text.endswith("```"):
-            result_text = result_text[:-3]
-            
-        result_text = result_text.strip()
+        # Dọn dẹp thẻ code block
+        result_text = _clean_json_text(result_text)
         parsed_json = json.loads(result_text)
+
+        # Nếu proxy trả về object thay vì array (do json_object mode), thử unwrap
+        if isinstance(parsed_json, dict):
+            for v in parsed_json.values():
+                if isinstance(v, list):
+                    parsed_json = v
+                    break
+            else:
+                parsed_json = []
         
         if isinstance(parsed_json, list):
             for item in parsed_json:
                 item["unit"] = "Học viện ANND"
                 item["category"] = "ToanTruong"
                 item["participantUserIds"] = []
-                item["participants_raw"] = item.get("participants_raw", [])
-                
+                # Chuyển participants mới sang participants_raw để tương thích hàm mapping
+                item["participants_raw"] = item.pop("participants", []) or []
                 dept_name = item.pop("department", "")
                 item["departmentId"] = find_matching_department_id(dept_name, departments)
-                
             return parsed_json
         return []
     except Exception as e:
@@ -438,24 +445,30 @@ async def extract_full_text_async(text: str, departments: list) -> list:
     giúp tăng tốc độ phản hồi của API lên gấp nhiều lần và tiết kiệm tối đa hạn mức quota (1 request/lần).
     """
     dept_info = json.dumps(departments, ensure_ascii=False)
+    from datetime import datetime
+    current_year = datetime.now().year
     prompt = f"""
-Bạn là một trợ lý AI bóc tách lịch công tác chuyên nghiệp. Hãy đọc văn bản lịch dưới đây và trích xuất thành một JSON array chứa các objects viết tắt gọn nhẹ sau:
+Bạn là một trợ lý AI bóc tách lịch công tác chuyên nghiệp. Hãy đọc văn bản lịch dưới đây và trích xuất thành JSON array. Năm hiện tại là {current_year}.
 
 DANH SÁCH PHÒNG BAN TRONG HỆ THỐNG:
 {dept_info}
 
-Quy tắc cấu trúc viết tắt (CHỈ trả về JSON array thô `[...]` không bọc markdown):
+QUY TẮC TRÍCH XUẤT QUAN TRỌNG:
+1. Trường "tc" (teacher): Chỉ lấy TÊN người chủ trì - bỏ chức danh và phần trong ngoặc.
+2. Trường "pr" (participants): Trích xuất danh sách object {{"name": "...", "dept": "..."}}.
+3. Trường "dp" (department): Mã viết tắt phòng ban chủ quản.
+
+CHỈ trả về JSON array thô `[...]` không bọc markdown:
 [
   {{
-    "t": "Tiêu đề công việc (chuỗi)",
-    "tc": "Người chủ trì (tên người, ví dụ: Đ/c Vũ (PGĐ))",
-    "r": "Địa điểm (nếu có, không có để chuỗi rỗng)",
-    "d": "Ngày (scheduleDate dưới dạng YYYY-MM-DD, hãy tự suy luận dựa vào tiêu đề tuần hoặc các mốc thời gian của cả tuần)",
-    "st": "Giờ bắt đầu (startTime dưới dạng HH:MM, mặc định 08:00)",
-    "et": "Giờ kết thúc (endTime dưới dạng HH:MM, mặc định 11:30 cho sáng, 17:00 cho chiều)",
-    "n": "Ghi chú/Thành phần tham gia (note)",
-    "dp": "Tên viết tắt hoặc từ khóa của phòng ban liên quan nhất (ví dụ: QLĐT, HC, NV1... để trống nếu không rõ)",
-    "pr": ["Danh sách tên viết tắt hoặc đầy đủ của những người tham gia, trích xuất từ cột Thành phần dự hoặc Ghi chú hoặc Tiêu đề, ví dụ: ['Nghĩa(nv7)', 'Hùng(hc)']. Nếu không có để mảng rỗng []"]
+    "t": "Tiêu đề công việc",
+    "tc": "Tên người chủ trì",
+    "r": "Địa điểm",
+    "d": "YYYY-MM-DD",
+    "st": "HH:MM",
+    "n": "Ghi chú",
+    "dp": "Mã phòng ban",
+    "pr": [{{"name": "...", "dept": "..."}}]
   }}
 ]
 
@@ -487,48 +500,51 @@ VĂN BẢN LỊCH CÔNG TÁC:
                 return response.text
 
         response_text = await loop.run_in_executor(None, _call_api)
-        result_text = response_text.strip() if isinstance(response_text, str) else response_text
-        
-        # Dọn dẹp thẻ code block phòng hờ trường hợp API không tuân thủ hoàn toàn JSON mode
-        if result_text.startswith("```json"):
-            result_text = result_text[7:]
-        if result_text.startswith("```"):
-            result_text = result_text[3:]
-        if result_text.endswith("```"):
-            result_text = result_text[:-3]
-            
-        result_text = result_text.strip()
+        result_text = response_text.strip() if isinstance(response_text, str) else str(response_text)
+        result_text = _clean_json_text(result_text)
         parsed_json = json.loads(result_text)
         
         schedules = []
         if isinstance(parsed_json, list):
             for item in parsed_json:
-                # Ánh xạ từ các key viết tắt sang định dạng chuẩn của DB
+                # Clean teacher: bỏ chức danh nếu AI chưa làm sẵn
+                raw_teacher = item.get("tc", "")
+                teacher_name = clean_title(raw_teacher) if raw_teacher else ""
+
                 schedule_item = {
                     "title": item.get("t", ""),
-                    "teacher": item.get("tc", ""),
+                    "teacher": teacher_name,
                     "room": item.get("r", ""),
                     "scheduleDate": item.get("d", ""),
                     "startTime": item.get("st", "08:00"),
-                    "endTime": item.get("et", "11:30"),
                     "note": item.get("n", ""),
                     "unit": "Học viện ANND",
                     "category": "ToanTruong",
                     "participantUserIds": [],
+                    # participants_raw: list of dict {{name, dept}} hoặc str
                     "participants_raw": item.get("pr", []),
                     "departmentId": ""
                 }
                 
-                # Ánh xạ ID phòng ban
                 dept_name = item.get("dp", "")
                 schedule_item["departmentId"] = find_matching_department_id(dept_name, departments)
                 schedules.append(schedule_item)
                 
-            return schedules
-        return []
+        return schedules
     except Exception as e:
         print(f"[Gemini Service] Lỗi trích xuất toàn bộ text: {e}")
         return []
+
+def _clean_json_text(text: str) -> str:
+    """Dọn dẹp thẻ markdown ```json ... ``` khỏi chuỗi JSON trước khi parse."""
+    text = text.strip()
+    if text.startswith("```json"):
+        text = text[7:]
+    elif text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    return text.strip()
 
 
 def remove_vietnamese_accents(s: str) -> str:
@@ -545,56 +561,77 @@ def remove_vietnamese_accents(s: str) -> str:
 
 
 def clean_title(name: str) -> str:
-    """Loại bỏ chức danh viết tắt như Đ/c, GS, PGS... khỏi họ tên."""
-    name = re.sub(r'^(?:đ/c|Đ/c|các đ/c|Các đ/c|đồng chí|đồng chí:|GS\.\s*TS|PGS\.\s*TS|PGS,\s*TS|Trung tướng|Thượng tướng)\s+', '', name, flags=re.IGNORECASE)
+    """Loại bỏ chức danh viết tắt như Đ/c, GS, PGS, quân hàm... khỏi họ tên."""
+    # Loại bỏ các tiền tố chức danh, quân hàm
+    name = re.sub(
+        r'^(?:đ/c|Đ/c|các đ/c|Các đ/c|đồng chí|đồng chí:|GS\.\s*TS|PGS\.\s*TS|PGS,\s*TS|'
+        r'Trung tướng|Thượng tướng|Trung tá|Thiếu tá|Trung sĩ|Thiếu sĩ|'
+        r'Đại tá|Thượng tá|Tá|Sĩ|Lý|Bê)\s+',
+        '', name, flags=re.IGNORECASE
+    )
+    # Loại bỏ phần trong ngoặc ở cuối: (PGĐ), (HC)...
     name = re.sub(r'\s*\([^)]+\)$', '', name)
+    # Loại bỏ phần sau dấu gạch nối ở cuối: - Hành chính
+    name = re.sub(r'\s*-\s*\S+.*$', '', name)
     return name.strip()
 
 
-def match_participant_to_user(raw_name: str, users: list, departments: list) -> str | None:
+def match_participant_to_user(raw_participant, users: list, departments: list) -> str | None:
     """
     Thuật toán so khớp thông minh: Ánh xạ từ họ tên viết tắt thô (trong PDF)
     sang tài khoản người dùng (users) trong DB.
+
+    Hỗ trợ cả 2 format:
+      - Format mới (dict): {{"name": "Nghĩa", "dept": "NV7"}} - AI đã tách sẵn
+      - Format cũ (str): "Nghĩa(nv7)" hoặc "Đ/c Nghĩa (NV7)" - cần parse thủ công
     """
-    name_clean = clean_title(raw_name)
+    dept_code = None
+
+    if isinstance(raw_participant, dict):
+        # Format mới: AI đã tách sẵn name và dept
+        raw_name = raw_participant.get("name", "").strip()
+        dept_code = raw_participant.get("dept", "").strip() or None
+        name_clean = raw_name
+    else:
+        # Format cũ: chuỗi thô cần parse
+        raw_name = str(raw_participant).strip()
+        name_clean = clean_title(raw_name)
+        # Tìm mã phòng ban trong ngoặc hoặc sau gạch nối
+        match = re.search(r'([^()\[\]\-]+)\s*(?:\(([^)]+)\)|\[([^\]]+)\]|-\s*(.+))', raw_name)
+        if match:
+            name_clean = clean_title(match.group(1))
+            dept_code = match.group(2) or match.group(3) or match.group(4)
+            if dept_code:
+                dept_code = dept_code.strip()
+
     if not name_clean or len(name_clean) < 2:
         return None
-        
-    # Tìm kiếm xem có ký hiệu phòng ban đi kèm trong ngoặc hay dấu gạch ngang không
-    # Ví dụ: "Nghĩa (NV7)"
-    dept_code = None
-    match = re.search(r'([^()\-]+)\s*(?:\(([^)]+)\)|\[([^\]]+)\]|\-\s*(.+))', raw_name)
-    if match:
-        name_clean = clean_title(match.group(1))
-        dept_code = match.group(2) or match.group(3) or match.group(4)
-        if dept_code:
-            dept_code = dept_code.strip()
-            
+
     name_accentless = remove_vietnamese_accents(name_clean)
-    
-    # 1. Tìm departmentId nếu có thông tin đơn vị đi kèm
+
+    # Tìm departmentId nếu có thông tin đơn vị đi kèm
     target_dept_id = None
     if dept_code:
         target_dept_id = find_matching_department_id(dept_code, departments)
-        
+
     # Lọc danh sách users theo phòng ban để giảm tỷ lệ trùng lặp sai
     filtered_users = users
     if target_dept_id:
         filtered_users = [u for u in users if u.get("department_id") == target_dept_id]
-        
+
     # Mức 1: Khớp chính xác toàn bộ Họ tên (không dấu)
     for u in filtered_users:
         u_name = remove_vietnamese_accents(clean_title(u.get("full_name", "")))
         if u_name == name_accentless:
             return u["id"]
-            
+
     # Mức 2: Khớp từ cuối cùng của Họ tên (ví dụ: "Nghĩa" khớp "Nguyễn Đình Nghĩa")
     for u in filtered_users:
         u_name = remove_vietnamese_accents(clean_title(u.get("full_name", "")))
         words = u_name.split()
         if words and words[-1] == name_accentless:
             return u["id"]
-            
+
     # Mức 3: Khớp tên đăng nhập (Username)
     for u in filtered_users:
         u_username = remove_vietnamese_accents(u.get("username", ""))
@@ -605,26 +642,23 @@ def match_participant_to_user(raw_name: str, users: list, departments: list) -> 
             if name_accentless == u_username:
                 return u["id"]
 
-    # Mức 4: Khớp chứa trong Họ tên (Chỉ áp dụng khi tên viết tắt có từ 2 từ trở lên để tránh trùng lặp họ như "Vũ", "Nguyễn")
+    # Mức 4: Khớp chứa trong Họ tên (Chỉ áp dụng khi tên viết tắt có từ 2 từ trở lên)
     if len(name_accentless.split()) > 1:
         for u in filtered_users:
             u_name = remove_vietnamese_accents(clean_title(u.get("full_name", "")))
             if name_accentless in u_name:
                 return u["id"]
 
-    # Cơ chế dự phòng (Fallback): Nếu có chỉ định phòng ban nhưng khoa đó chưa có nhân sự khớp,
-    # tìm trên toàn bộ hệ thống (đề phòng nhân sự chuyển khoa chưa cập nhật DB)
-    if target_dept_id and len(filtered_users) == 0:
+    # Fallback: Nếu có chỉ định phòng ban nhưng chưa tìm thấy, tìm trên toàn bộ hệ thống
+    if target_dept_id:
         for u in users:
             u_name = remove_vietnamese_accents(clean_title(u.get("full_name", "")))
             words = u_name.split()
             if words and words[-1] == name_accentless:
                 return u["id"]
-            # Chỉ khớp substring trên toàn hệ thống nếu từ 2 từ trở lên
-            if len(name_accentless.split()) > 1:
-                if name_accentless in u_name:
-                    return u["id"]
-                
+            if len(name_accentless.split()) > 1 and name_accentless in u_name:
+                return u["id"]
+
     return None
 
 

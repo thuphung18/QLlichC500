@@ -186,7 +186,7 @@ class _ReviewImportedScheduleScreenState extends State<ReviewImportedScheduleScr
                         ),
                         const SizedBox(height: 8),
                         _buildInfoRow(Icons.calendar_today, 'Ngày', schedule.scheduleDate),
-                        _buildInfoRow(Icons.access_time, 'Thời gian', '${schedule.startTime} - ${schedule.endTime}'),
+                        _buildInfoRow(Icons.access_time, 'Thời gian', schedule.startTime),
                         _buildInfoRow(Icons.person, 'Chủ trì', schedule.teacher),
                         if (schedule.room.isNotEmpty) _buildInfoRow(Icons.location_on, 'Địa điểm', schedule.room),
                         if (schedule.note != null && schedule.note!.isNotEmpty)
@@ -289,7 +289,6 @@ class _EditScheduleDialogState extends State<EditScheduleDialog> {
 
   DateTime? _selectedDate;
   TimeOfDay? _startTime;
-  TimeOfDay? _endTime;
 
   String? _selectedDepartmentId;
   final Set<String> _selectedUserIds = {};
@@ -318,7 +317,6 @@ class _EditScheduleDialogState extends State<EditScheduleDialog> {
 
     // Parse times
     _startTime = _parseTimeOfDay(widget.schedule.startTime);
-    _endTime = _parseTimeOfDay(widget.schedule.endTime);
 
     // Set department
     if (widget.schedule.departmentId.isNotEmpty) {
@@ -387,10 +385,8 @@ class _EditScheduleDialogState extends State<EditScheduleDialog> {
     }
   }
 
-  Future<void> _selectTime(bool isStart) async {
-    final TimeOfDay initialTime = isStart 
-        ? (_startTime ?? TimeOfDay.now())
-        : (_endTime ?? TimeOfDay.now());
+  Future<void> _selectTime() async {
+    final TimeOfDay initialTime = _startTime ?? TimeOfDay.now();
         
     final TimeOfDay? picked = await showTimePicker(
       context: context,
@@ -398,11 +394,7 @@ class _EditScheduleDialogState extends State<EditScheduleDialog> {
     );
     if (picked != null) {
       setState(() {
-        if (isStart) {
-          _startTime = picked;
-        } else {
-          _endTime = picked;
-        }
+        _startTime = picked;
       });
     }
   }
@@ -410,9 +402,9 @@ class _EditScheduleDialogState extends State<EditScheduleDialog> {
   void _onSave() {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_selectedDate == null || _startTime == null || _endTime == null) {
+    if (_selectedDate == null || _startTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng chọn đầy đủ ngày và giờ')),
+        const SnackBar(content: Text('Vui lòng chọn ngày và giờ')),
       );
       return;
     }
@@ -423,7 +415,6 @@ class _EditScheduleDialogState extends State<EditScheduleDialog> {
       room: _roomController.text,
       scheduleDate: _formatDate(_selectedDate),
       startTime: _formatTimeOfDay(_startTime),
-      endTime: _formatTimeOfDay(_endTime),
       note: _noteController.text.isNotEmpty ? _noteController.text : null,
       unit: _unitController.text,
       departmentId: _selectedDepartmentId ?? '',
@@ -489,20 +480,10 @@ class _EditScheduleDialogState extends State<EditScheduleDialog> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: InkWell(
-                        onTap: () => _selectTime(true),
+                        onTap: _selectTime,
                         child: InputDecorator(
                           decoration: const InputDecoration(labelText: 'Bắt đầu', border: OutlineInputBorder()),
                           child: Text(_startTime == null ? 'Chọn giờ' : _formatTimeOfDay(_startTime)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: InkWell(
-                        onTap: () => _selectTime(false),
-                        child: InputDecorator(
-                          decoration: const InputDecoration(labelText: 'Kết thúc', border: OutlineInputBorder()),
-                          child: Text(_endTime == null ? 'Chọn giờ' : _formatTimeOfDay(_endTime)),
                         ),
                       ),
                     ),

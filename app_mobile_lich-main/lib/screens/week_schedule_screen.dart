@@ -44,6 +44,7 @@ class WeekScheduleScreen extends StatefulWidget {
 class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
   Future<List<ScheduleItem>>? _schedulesFuture;
   late StreamSubscription<String> _eventSubscription;
+  StreamSubscription<String>? _changedSubscription;
 
   @override
   void initState() {
@@ -51,6 +52,13 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
     _loadSchedules();
     AppState().selectedDayNotifier.addListener(_onDayChanged);
     _eventSubscription = EventBus().onScheduleDeleted.listen((_) {
+      if (mounted) {
+        setState(() {
+          _loadSchedules();
+        });
+      }
+    });
+    _changedSubscription = EventBus().onSchedulesChanged.listen((_) {
       if (mounted) {
         setState(() {
           _loadSchedules();
@@ -75,6 +83,7 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
   void dispose() {
     AppState().selectedDayNotifier.removeListener(_onDayChanged);
     _eventSubscription.cancel();
+    _changedSubscription?.cancel();
     super.dispose();
   }
 
@@ -160,6 +169,8 @@ class _WeekScheduleScreenState extends State<WeekScheduleScreen> {
             setState(() {
               _loadSchedules();
             });
+            // Phát event để tất cả màn hình khác (MySchedule, Department...) tự động refresh
+            EventBus().fireSchedulesChanged('imported');
             // Đồng bộ lại thông báo cục bộ sau khi import AI thành công
             widget.repository.getMySchedules().then((mySchedules) async {
               final notificationService = NotificationService();

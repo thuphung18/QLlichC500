@@ -126,7 +126,6 @@ class ScheduleItem(BaseModel):
     room: str
     dateLabel: str  # Ví dụ: "Thứ 2, 21/06"
     startTime: str  # Định dạng "HH:MM"
-    endTime: str    # Định dạng "HH:MM"
     session: str    # Ca học: 'morning', 'afternoon', 'evening'
     note: Optional[str] = None
     unit: str       # Đơn vị tổ chức (ví dụ: Học viện ANND)
@@ -171,7 +170,6 @@ class CreateScheduleRequest(BaseModel):
     room: str
     scheduleDate: str  # Định dạng "YYYY-MM-DD"
     startTime: str     # Định dạng "HH:MM"
-    endTime: str       # Định dạng "HH:MM"
     note: Optional[str] = None
     unit: str
     departmentId: str

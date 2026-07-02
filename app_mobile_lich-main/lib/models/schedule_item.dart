@@ -19,9 +19,7 @@ class ScheduleItem {
   /// Giờ bắt đầu (VD: "07:30")
   final String startTime;
   
-  /// Giờ kết thúc (VD: "09:30")
-  final String endTime;
-  
+
   /// Buổi diễn ra (Sáng/Chiều/Tối)
   final String session;
   
@@ -64,7 +62,6 @@ class ScheduleItem {
     required this.room,
     required this.dateLabel,
     required this.startTime,
-    required this.endTime,
     required this.session,
     required this.note,
     required this.unit,
@@ -78,8 +75,8 @@ class ScheduleItem {
     required this.dayIndex,
   });
 
-  /// Getter trả về chuỗi hiển thị khoảng thời gian (VD: "07:30 - 09:30")
-  String get timeRange => '$startTime - $endTime';
+  /// Getter trả về chuỗi hiển thị khoảng thời gian (VD: "07:30")
+  String get timeRange => startTime;
 
   /// Getter tính toán thời gian bắt đầu của lịch này dưới dạng [DateTime].
   /// Dùng để sắp xếp lịch theo thời gian thực hoặc kiểm tra quá hạn.
@@ -108,7 +105,7 @@ class ScheduleItem {
     }
   }
 
-  /// Kiểm tra xem lịch này ĐÃ KẾT THÚC (quá hạn) so với thời điểm hiện tại hay chưa.
+  /// Kiểm tra xem lịch này ĐÃ BẮT ĐẦU/DIỄN RA hay chưa.
   bool get isPassed {
     try {
       // Tìm mẫu ngày/tháng (ví dụ: 08/06)
@@ -119,8 +116,8 @@ class ScheduleItem {
       final day = int.parse(match.group(1)!);
       final month = int.parse(match.group(2)!);
       
-      // Tách giờ và phút từ giờ kết thúc
-      final timeParts = endTime.split(':');
+      // Tách giờ và phút từ giờ bắt đầu
+      final timeParts = startTime.split(':');
       if (timeParts.length < 2) return false;
       
       final hour = int.tryParse(timeParts[0]) ?? 0;
@@ -129,8 +126,8 @@ class ScheduleItem {
       final now = DateTime.now();
       final scheduleTime = DateTime(now.year, month, day, hour, minute);
       
-      // Nếu thời gian hiện tại lớn hơn thời gian kết thúc của lịch thì trả về true
-      return now.isAfter(scheduleTime);
+      // Nếu thời gian hiện tại lớn hơn hoặc bằng thời gian bắt đầu thì trả về true
+      return now.isAfter(scheduleTime) || now.isAtSameMomentAs(scheduleTime);
     } catch (e) {
       return false;
     }
@@ -145,7 +142,6 @@ class ScheduleItem {
       room: json['room']?.toString() ?? '',
       dateLabel: json['dateLabel']?.toString() ?? '',
       startTime: json['startTime']?.toString() ?? '',
-      endTime: json['endTime']?.toString() ?? '',
       session: json['session']?.toString() ?? '',
       note: json['note']?.toString() ?? '',
       unit: json['unit']?.toString() ?? '',
