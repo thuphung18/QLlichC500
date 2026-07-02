@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 import firebase_admin
 from firebase_admin import credentials, messaging
-from database import get_connection
+from database import get_connection, return_connection
 from cache import invalidate_schedules
 
 
@@ -103,7 +103,7 @@ def check_schedules_and_notify():
     finally:
         # Đảm bảo đóng cursor và giải phóng kết nối trả về pool
         cursor.close()
-        conn.close()
+        return_connection(conn)
 
 
 def send_import_notifications_bg(has_toantruong: bool, dept_ids: set):
@@ -147,7 +147,7 @@ def send_import_notifications_bg(has_toantruong: bool, dept_ids: set):
         print(f"[Import Notify] Lỗi khi gửi thông báo: {e}")
     finally:
         cursor.close()
-        conn.close()
+        return_connection(conn)
 
 
 def auto_hide_old_schedules():
@@ -196,7 +196,7 @@ def auto_hide_old_schedules():
         print(f"[Auto Archive] Lỗi khi tự động ẩn lịch cũ: {e}")
     finally:
         cursor.close()
-        conn.close()
+        return_connection(conn)
 
 
 def start_scheduler():

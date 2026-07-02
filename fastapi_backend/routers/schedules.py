@@ -650,6 +650,13 @@ def bulk_create_schedules(request: List[CreateScheduleRequest],
         cursor.execute("SELECT TOP 1 id FROM dbo.departments ORDER BY name")
         default_dept_row = cursor.fetchone()
         default_dept_id = str(default_dept_row[0]) if default_dept_row else None
+        # Lấy trước toàn bộ danh sách users để lookup siêu tốc, tránh N+1 Query
+        cursor.execute("SELECT id, full_name FROM dbo.users")
+        users_dict = {row[0]: row[1] for row in cursor.fetchall()}
+
+        schedules_to_insert = []
+        participants_to_insert = []
+
         for sched in request:
             cat = sched.category
             # Lịch toàn trường thì chỉ Admin mới được phép lưu
@@ -692,29 +699,47 @@ def bulk_create_schedules(request: List[CreateScheduleRequest],
             else:
                 dept_ids_to_notify.add(dept_id)
 
-            # Lưu thông tin lịch
-            cursor.execute("""
-                INSERT INTO dbo.schedules (
-                    id, title, teacher, room, schedule_date, date_label, day_index,
-                    start_time, end_time, session, note, unit, department_id, category, created_by_user_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
+            # Thu thập data insert
+            schedules_to_insert.append((
                 new_id, sched.title, sched.teacher, sched.room, sched.scheduleDate,
                 date_label, day_index, sched.startTime, None, session,
                 sched.note, sched.unit, dept_id, cat, user_id
             ))
 
-            # Lưu người tham gia (lookup full_name từ DB như create_schedule)
+            # Lookup người tham gia siêu tốc từ dictionary
             if sched.participantUserIds:
                 for p_id in sched.participantUserIds:
-                    cursor.execute("SELECT full_name FROM dbo.users WHERE id = ?", (p_id,))
-                    u_row = cursor.fetchone()
-                    if u_row:
-                        cursor.execute("""
-                            INSERT INTO dbo.schedule_participants (schedule_id, participant_name, user_id)
-                            VALUES (?, ?, ?)
-                        """, (new_id, u_row[0], p_id))
+                    full_name = users_dict.get(p_id)
+                    if full_name:
+                        participants_to_insert.append((new_id, full_name, p_id))
+
             success_count += 1
+
+        # Thực thi Insert hàng loạt tự build (Multi-row Insert) để siêu tốc mà không bị lỗi Cast của pyodbc
+        if schedules_to_insert:
+            # Batch size khoảng 100 rows mỗi lần để tránh vượt quá 2100 parameters của SQL Server
+            batch_size = 100
+            for i in range(0, len(schedules_to_insert), batch_size):
+                batch = schedules_to_insert[i:i + batch_size]
+                placeholders = ",".join(["(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"] * len(batch))
+                flat_params = [item for sublist in batch for item in sublist]
+                cursor.execute(f"""
+                    INSERT INTO dbo.schedules (
+                        id, title, teacher, room, schedule_date, date_label, day_index,
+                        start_time, end_time, session, note, unit, department_id, category, created_by_user_id
+                    ) VALUES {placeholders}
+                """, flat_params)
+
+        if participants_to_insert:
+            batch_size = 500
+            for i in range(0, len(participants_to_insert), batch_size):
+                batch = participants_to_insert[i:i + batch_size]
+                placeholders = ",".join(["(?, ?, ?)"] * len(batch))
+                flat_params = [item for sublist in batch for item in sublist]
+                cursor.execute(f"""
+                    INSERT INTO dbo.schedule_participants (schedule_id, participant_name, user_id)
+                    VALUES {placeholders}
+                """, flat_params)
 
         db.commit()
         # Xóa toàn bộ cache sau khi lưu dữ liệu hàng loạt

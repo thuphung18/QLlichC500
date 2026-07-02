@@ -313,33 +313,33 @@ async def extract_single_chunk(group_name: str, chunk_text: str, departments: li
     from datetime import datetime
     current_year = datetime.now().year
     prompt = f"""
-Bạn là một trợ lý AI phân tích lịch công tác chuyên nghiệp. Hãy đọc nội dung lịch dưới đây và trích xuất thành JSON array. Năm hiện tại là {current_year}.
+Bạn là một trợ lý AI phân tích lịch công tác chuyên nghiệp. Hãy đọc nội dung lịch (thường có dạng bảng với các cột: Thời gian/Địa điểm, Nội dung công việc, Chủ trì, Thành phần dự) và trích xuất thành JSON array. Năm hiện tại là {current_year}.
 
 QUY TẮC TRÍCH XUẤT QUAN TRỌNG:
-1. Mỗi mục lịch là một object JSON trong array.
-2. Trường "participants": Trích xuất TỪNG NGƯỜI một trong cột "Thành phần dự" hoặc "Thành phần tham gia" hoặc ghi chú.
-   - Với mỗi người, tách TÊN và PHÒNG BAN riêng.
-   - Ví dụ: "Đ/c Nghĩa (NV7)" → {{"name": "Nghĩa", "dept": "NV7"}}
-   - Ví dụ: "đ/c Hùng - Hành chính" → {{"name": "Hùng", "dept": "HC"}}
-   - Ví dụ: "Trung tá Vũ (PGĐ)" → {{"name": "Vũ", "dept": ""}}
-   - Bỏ tất cả chức danh: Đ/c, đồng chí, Trung tá, Thiếu tá, GS, TS, PGS...
-   - Chỉ giữ lại TÊN (thường là từ cuối trong họ tên đầy đủ) và MÃ PHÒNG BAN nếu có.
-3. Trường "teacher": Chỉ lấy TÊN (không có chức danh). Ví dụ: "Đ/c Vũ (PGĐ)" → "Vũ".
-4. Trường "department": Mã viết tắt phòng ban chủ quản của lịch (NV7, HC, QLĐT...)
+1. Mỗi dòng lịch tương ứng với một object JSON. Dựa vào các cột của bảng để phân tích:
+   - Cột Thời gian, địa điểm -> Tách thành `scheduleDate`, `startTime`, `room`.
+   - Cột Nội dung công việc -> `title` và `department` (dựa vào từ khóa viết tắt phòng ban).
+   - Cột Chủ trì -> `teacher` và `teacher_dept`.
+   - Cột Thành phần dự -> `note` (giữ nguyên chuỗi) và danh sách `participants`.
+2. Trường "participants": Trích xuất TỪNG NGƯỜI một trong cột "Thành phần dự".
+   - Tách TÊN và PHÒNG BAN. Ví dụ: "Đ/c Nghĩa (NV7)" → {{"name": "Nghĩa", "dept": "NV7"}}
+   - Bỏ tất cả chức danh (Đ/c, Trung tá, GS, TS...). Chỉ giữ TÊN (từ cuối).
+3. Trường "teacher": Chỉ lấy TÊN người ở cột "Chủ trì" (không có chức danh).
+4. Trường "department": Mã viết tắt phòng ban chủ quản (NV7, HC...).
 
 CHỈ trả về JSON array thô `[...]` không có markdown:
 [
   {{
-    "title": "Nội dung công việc",
+    "title": "Nội dung công việc (Lấy từ cột Nội dung công việc)",
     "teacher": "Tên người chủ trì (chỉ tên, không chức danh)",
-    "teacher_dept": "Mã phòng ban của người chủ trì nếu có (ví dụ NV7, HC...)",
-    "room": "Địa điểm (để rỗng nếu không có)",
-    "scheduleDate": "YYYY-MM-DD - suy luận từ tiêu đề tuần/mốc thời gian, dùng năm {current_year} nếu không rõ",
-    "startTime": "HH:MM - mặc định 08:00 nếu không rõ",
-    "note": "Toàn bộ nội dung cột Thành phần dự / Ghi chú giữ nguyên",
-    "department": "Mã viết tắt phòng ban chủ quản của lịch (NV7, HC, QLĐT... để rỗng nếu là lịch toàn trường)",
+    "teacher_dept": "Mã phòng ban của người chủ trì nếu có",
+    "room": "Địa điểm (Lấy từ cột Thời gian/Địa điểm, ví dụ: 'T3 Nhà Thư viện', để rỗng nếu không có)",
+    "scheduleDate": "YYYY-MM-DD - suy luận từ cột thời gian (thứ/ngày), dùng năm {current_year}",
+    "startTime": "HH:MM - Giờ bắt đầu từ cột Thời gian, ví dụ 08:00",
+    "note": "Toàn bộ chuỗi nguyên bản của cột Thành phần dự (giữ nguyên để hiển thị Ghi chú)",
+    "department": "Mã viết tắt phòng ban chủ quản (để rỗng nếu lịch toàn trường)",
     "participants": [
-      {{"name": "Tên người (chỉ tên)", "dept": "Mã phòng ban nếu có, để rỗng nếu không có"}}
+      {{"name": "Tên người (chỉ tên)", "dept": "Mã phòng ban (nếu có)"}}
     ]
   }}
 ]
@@ -450,25 +450,24 @@ async def extract_full_text_async(text: str, departments: list) -> list:
     prompt = f"""
 Bạn là một trợ lý AI bóc tách lịch công tác chuyên nghiệp. Hãy đọc văn bản lịch dưới đây và trích xuất thành JSON array. Năm hiện tại là {current_year}.
 
-DANH SÁCH PHÒNG BAN TRONG HỆ THỐNG:
-{dept_info}
-
 QUY TẮC TRÍCH XUẤT QUAN TRỌNG:
-1. Trường "tc" (teacher): Chỉ lấy TÊN người chủ trì - bỏ chức danh và phần trong ngoặc.
-2. Trường "pr" (participants): Trích xuất danh sách object {{"name": "...", "dept": "..."}}.
-3. Trường "dp" (department): Mã viết tắt phòng ban chủ quản.
+1. Mỗi dòng lịch (từ bảng gồm các cột: Thời gian/Địa điểm, Nội dung, Chủ trì, Thành phần dự) tương ứng với 1 object JSON.
+2. Cột Chủ trì -> Trường "tc": Chỉ lấy TÊN người chủ trì - bỏ chức danh (Đ/c, GS...).
+3. Cột Thành phần dự -> Trường "pr": Trích xuất danh sách object {{"name": "...", "dept": "..."}}. Bỏ chức danh.
+4. Trường "dp": Mã viết tắt phòng ban chủ quản (dựa vào từ khóa trong Nội dung/Thành phần, ví dụ NV7, HC...).
+5. Cột Nội dung -> Trường "t": BẮT BUỘC giữ nguyên TOÀN BỘ câu chữ gốc, TUYỆT ĐỐI KHÔNG tóm tắt hay cắt bớt chữ (Phải giữ đủ các chi tiết như 'mở tại...', 'do đ/c...').
 
-CHỈ trả về JSON array thô `[...]` không bọc markdown:
+CHỈ trả về JSON array thô `[...]` sử dụng CÁC KEY VIẾT TẮT NÀY để tiết kiệm token (không bọc markdown):
 [
   {{
-    "t": "Tiêu đề công việc",
-    "tc": "Tên người chủ trì",
-    "r": "Địa điểm",
-    "d": "YYYY-MM-DD",
-    "st": "HH:MM",
-    "n": "Ghi chú",
-    "dp": "Mã phòng ban",
-    "pr": [{{"name": "...", "dept": "..."}}]
+    "t": "Giữ nguyên TOÀN BỘ Nội dung công việc gốc (Tuyệt đối không tóm tắt)",
+    "tc": "Tên người chủ trì (chỉ tên, không chức danh, lấy từ cột Chủ trì)",
+    "r": "Địa điểm (Lấy từ cột Thời gian/Địa điểm)",
+    "d": "YYYY-MM-DD (Suy luận từ cột Thời gian)",
+    "st": "HH:MM (Giờ bắt đầu từ cột Thời gian)",
+    "n": "Toàn bộ chuỗi nguyên bản của cột Thành phần dự",
+    "dp": "Mã phòng ban chủ quản",
+    "pr": [{{"name": "Tên người", "dept": "Mã phòng ban (nếu có)"}}]
   }}
 ]
 
@@ -479,25 +478,43 @@ VĂN BẢN LỊCH CÔNG TÁC:
         loop = asyncio.get_event_loop()
         
         def _call_api():
-            if _USE_NEW_SDK:
-                from google.genai import types
-                config = types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.1
-                )
-                response = _client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=prompt,
-                    config=config
-                )
-                return response.text
+            if _API_KEY.startswith("sk-"):
+                import requests
+                headers = {
+                    "Authorization": f"Bearer {_API_KEY}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": 'gemini-2.5-flash',
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1
+                }
+                resp = requests.post("https://platform.beeknoee.com/api/v1/chat/completions", headers=headers, json=payload, timeout=90)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return data["choices"][0]["message"]["content"]
+                else:
+                    raise Exception(f"Proxy Error {resp.status_code}: {resp.text}")
             else:
-                model = genai.GenerativeModel('gemini-2.5-flash')
-                response = model.generate_content(
-                    prompt,
-                    generation_config={"response_mime_type": "application/json", "temperature": 0.1}
-                )
-                return response.text
+                if _USE_NEW_SDK:
+                    from google.genai import types
+                    config = types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.1
+                    )
+                    response = _client.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=prompt,
+                        config=config
+                    )
+                    return response.text
+                else:
+                    model = genai.GenerativeModel('gemini-2.5-flash')
+                    response = model.generate_content(
+                        prompt,
+                        generation_config={"response_mime_type": "application/json", "temperature": 0.1}
+                    )
+                    return response.text
 
         response_text = await loop.run_in_executor(None, _call_api)
         result_text = response_text.strip() if isinstance(response_text, str) else str(response_text)
@@ -589,8 +606,8 @@ def match_participant_to_user(raw_participant, users: list, departments: list) -
 
     if isinstance(raw_participant, dict):
         # Format mới: AI đã tách sẵn name và dept
-        raw_name = raw_participant.get("name", "").strip()
-        dept_code = raw_participant.get("dept", "").strip() or None
+        raw_name = (raw_participant.get("name") or "").strip()
+        dept_code = (raw_participant.get("dept") or "").strip() or None
         name_clean = raw_name
     else:
         # Format cũ: chuỗi thô cần parse
@@ -756,22 +773,21 @@ async def extract_schedules_from_file_async(file_path: str, file_ext: str, depar
         print("[Gemini Service] Không trích xuất được nội dung chữ từ file.")
         return []
         
-    # Chia nhỏ văn bản theo từng ngày riêng biệt để tăng cường xử lý song song và tốc độ
+    # Sử dụng chiến thuật 7 Requests song song theo yêu cầu để đạt tốc độ trích xuất tối đa
     groups = split_markdown_by_days(md_text)
     
-    # Tạo danh sách các task xử lý đồng thời bất đồng bộ bằng gemini-2.5-flash
     tasks = []
     for group_name, chunk_content in groups.items():
         if chunk_content.strip():
-            tasks.append(extract_single_chunk(group_name, chunk_content, departments))
-        
-    # Kích hoạt thực thi đồng thời và chờ đợi kết quả
+            # Sử dụng hàm extract_full_text_async đã được tối ưu Token cho từng chunk
+            tasks.append(extract_full_text_async(chunk_content, departments))
+            
     if not tasks:
         return []
         
+    # Kích hoạt chạy song song 7 luồng
     results = await asyncio.gather(*tasks)
     
-    # Hợp nhất kết quả từ các luồng gửi về
     all_schedules = []
     for group_schedules in results:
         all_schedules.extend(group_schedules)

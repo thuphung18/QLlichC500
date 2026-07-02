@@ -55,7 +55,7 @@ class _SearchScheduleScreenState extends State<SearchScheduleScreen> {
   void initState() {
     super.initState();
     _loadAllSchedules();
-    _eventSubscription = EventBus().onScheduleDeleted.listen((_) {
+    _eventSubscription = EventBus().onSchedulesChanged.listen((_) {
       if (mounted) {
         _loadAllSchedules();
       }
