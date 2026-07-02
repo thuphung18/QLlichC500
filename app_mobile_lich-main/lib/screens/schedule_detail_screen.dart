@@ -114,20 +114,13 @@ class ScheduleDetailScreen extends StatelessWidget {
             ],
           ),
 
-          const SizedBox(height: 18),
-
-          _SectionTitle(
-            title: 'Thông tin công việc',
-            accentColor: accentColor,
-          ),
-
           const SizedBox(height: 12),
 
           _InfoBox(
             children: [
               _InfoRow(
                 icon: Icons.person,
-                label: 'Người phụ trách / Giảng viên',
+                label: 'Người chủ trì',
                 value: item.teacher,
                 accentColor: accentColor,
               ),
@@ -162,37 +155,8 @@ class ScheduleDetailScreen extends StatelessWidget {
 
           const SizedBox(height: 18),
 
-          _SectionTitle(
-            title: 'Ghi chú',
-            accentColor: accentColor,
-          ),
+          const SizedBox(height: 18),
 
-          const SizedBox(height: 12),
-
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: Theme.of(context).cardColor,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withAlpha(10),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-            child: Text(
-              item.note,
-              style: TextStyle(
-                fontSize: 15,
-                height: 1.5,
-                color: Theme.of(context).textTheme.bodyLarge?.color ?? const Color(0xFF334155),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: () async {
               try {
